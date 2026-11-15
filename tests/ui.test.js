@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { screenFor, view, nextPair, settle, render, friendly } from '../src/ui.js';
+import { screenFor, view, settle, render, friendly } from '../src/ui.js';
 import { isRoomCode } from '../src/game.js';
 
 const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -266,21 +266,6 @@ describe('view', () => {
   });
   it('never shows the stored round number', () => {
     for (const s of [st('gm', game(), { secret }), st('a', game(), { myWord: 'Cola' }), st('e', game())]) expect(view(s)).not.toMatch(/Round 7/);
-  });
-});
-
-describe('nextPair', () => {
-  const list = [['Cola', 'Water'], ['Dog', 'Cat'], ['Sun', 'Moon']];
-  it('never offers the pair just shown, in either order', () => {
-    for (let i = 0; i < 200; i++) {
-      const cur = { common: 'Water', spy: 'Cola' };
-      const p = nextPair(list, cur);
-      expect([p.common, p.spy].sort()).not.toEqual(['Cola', 'Water']);
-    }
-  });
-  it('works with no current pair', () => {
-    const p = nextPair(list, null, () => 0);
-    expect([p.common, p.spy].sort()).toEqual(['Cola', 'Water']);
   });
 });
 

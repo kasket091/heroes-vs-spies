@@ -17,17 +17,6 @@ export function speakingOrder(playerIds, starterId) {
 
 export const pickSpy = (playerIds, rand = Math.random) => pick(playerIds, rand);
 
-export function dealPair(pair, rand = Math.random) {
-  const flip = rand() >= 0.5;
-  return { common: pair[flip ? 1 : 0], spy: pair[flip ? 0 : 1] };
-}
-
-export function validPair(a, b) {
-  const x = a.trim().toLowerCase();
-  const y = b.trim().toLowerCase();
-  return x !== '' && y !== '' && x !== y;
-}
-
 export function cleanName(raw) {
   return raw.slice(0, 20).trim() || null;
 }
@@ -98,7 +87,11 @@ const RESULT_STALL_MS = 20000;
 // What the host's phone does next; every other phone waits.
 export function hostStep({ phase, allVoted, resultAt, now }) {
   if (phase === 'voting') return allVoted ? 'close' : null;
-  if (phase === 'result') return now - resultAt >= RESULT_MS ? 'advance' : { wait: RESULT_MS - (now - resultAt) };
+  if (phase === 'result') {
+    // No stamp (an older write): do not wait for a time that is not there.
+    if (resultAt == null || now - resultAt >= RESULT_MS) return 'advance';
+    return { wait: RESULT_MS - (now - resultAt) };
+  }
   return null;
 }
 

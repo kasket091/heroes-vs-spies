@@ -74,7 +74,27 @@ describe('security rules', () => {
     await assertFails(db('p1').collection('rooms').get());
     await assertSucceeds(db('p1').doc('rooms/ABCD').get());
   });
-  it('gm creates own players doc FAILS', () => assertFails(db('gm').doc('rooms/ABCD/players/gm').set({ name: 'Gina', joinedAt: now(), expiresAt: ahead(7) })));
+  it('the host creates their own player record; a stranger creating the host\'s record FAILS', async () => {
+    await assertFails(db('p5').doc('rooms/ABCD/players/gm').set({ name: 'Gina', joinedAt: now(), expiresAt: ahead(7) }));
+    await assertSucceeds(db('gm').doc('rooms/ABCD/players/gm').set({ name: 'Gina', joinedAt: now(), expiresAt: ahead(7) }));
+  });
+  it('a player sets their own votedRound to an integer; a string FAILS; on someone else\'s record FAILS', async () => {
+    await assertFails(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: '1' }));
+    await assertFails(db('p1').doc('rooms/ABCD/players/p2').update({ votedRound: 1 }));
+    await assertFails(db('gm').doc('rooms/ABCD/players/p2').update({ votedRound: 1 }));
+    await assertSucceeds(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: 1 }));
+    await assertSucceeds(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: 2 }));
+  });
+  it('player create may carry votedRound as an integer only', async () => {
+    await assertFails(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), votedRound: 'x' }));
+    await assertFails(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), votedRound: 1.5 }));
+    await assertSucceeds(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), votedRound: 1 }));
+  });
+  it('the host reads gm/used; a player reading it FAILS', async () => {
+    await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD/gm/used').set({ keys: ['0:0-1'], expiresAt: ahead(7) }));
+    await assertFails(db('p1').doc('rooms/ABCD/gm/used').get());
+    await assertSucceeds(db('gm').doc('rooms/ABCD/gm/used').get());
+  });
   it('new player with a valid name creates own doc', () => assertSucceeds(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), expiresAt: ahead(7) })));
   it('players doc with an extra field FAILS', () => assertFails(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), expiresAt: ahead(7), admin: true })));
   it('players doc with a made-up joinedAt FAILS', () => assertFails(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: 1 })));

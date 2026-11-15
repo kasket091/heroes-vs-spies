@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { MIN_PLAYERS, safeStarters, speakingOrder, pickSpy, dealPair, validPair, cleanName, newRoomCode, starterChoices, whoIsOut, finalPoints, scoreRound, stage, gameWinner, teams, pairKeys, pickUnusedPair, pickStarter, waitingFor, hostStep, stalled } from '../src/game.js';
+import { MIN_PLAYERS, safeStarters, speakingOrder, pickSpy, cleanName, newRoomCode, starterChoices, whoIsOut, finalPoints, scoreRound, stage, gameWinner, teams, pairKeys, pickUnusedPair, pickStarter, waitingFor, hostStep, stalled } from '../src/game.js';
 import families from '../words/word-families.json';
 
 const P = ['a', 'b', 'c', 'd', 'e'];
@@ -20,15 +20,6 @@ test('speakingOrder wraps around', () => {
 test('pickSpy stays inside the list', () => {
   expect(pickSpy(P, () => 0)).toBe('a');
   expect(pickSpy(P, () => 0.999)).toBe('e');
-});
-test('dealPair gives either side to the spy', () => {
-  expect(dealPair(['Cola', 'Water'], () => 0)).toEqual({ common: 'Cola', spy: 'Water' });
-  expect(dealPair(['Cola', 'Water'], () => 0.9)).toEqual({ common: 'Water', spy: 'Cola' });
-});
-test('validPair', () => {
-  expect(validPair('Cola', 'Water')).toBe(true);
-  expect(validPair('', 'Water')).toBe(false);
-  expect(validPair(' cola ', 'Cola')).toBe(false);
 });
 test('cleanName', () => {
   expect(cleanName('  Ana ')).toBe('Ana');
@@ -132,6 +123,10 @@ test('hostStep', () => {
   expect(hostStep({ phase: 'result', resultAt: 1000, now: 4000 })).toEqual({ wait: 7000 });
   expect(hostStep({ phase: 'result', resultAt: 1000, now: 11000 })).toBe('advance');
   expect(hostStep({ phase: 'result', resultAt: 1000, now: 999999 })).toBe('advance');
+  expect(hostStep({ phase: 'result', resultAt: 1000, now: 11000 })).toBe('advance');
+  expect(hostStep({ phase: 'result', resultAt: 1000, now: 10999 })).toEqual({ wait: 1 });
+  expect(hostStep({ phase: 'result', now: 5000 })).toBe('advance');
+  expect(hostStep({ phase: 'result', resultAt: null, now: 5000 })).toBe('advance');
   expect(hostStep({ phase: 'lobby', now: 0 })).toBeNull();
   expect(hostStep({ phase: 'gameOver', now: 0 })).toBeNull();
 });
