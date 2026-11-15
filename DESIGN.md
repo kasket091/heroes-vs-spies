@@ -140,7 +140,7 @@ Small 0.4rem corners on buttons, fields, tags and the error box. Everything else
 ### Buttons
 - Primary: solid cobalt, white bold label, full width, 48px tall.
 - Secondary: transparent with a 2px ink outline, full width.
-- Choice: a whole ruled line you can tap (a name to pick or vote for): paper fill, cobalt text, rule-strong outline; fills cobalt on hover.
+- Choice: a whole ruled line you can tap (a name to pick or vote for): paper fill, cobalt text, rule-strong outline; fills cobalt on press, and on hover only on devices with a real pointer (`@media (hover: hover)`), because :hover sticks after a tap on phones.
 - Small: the per-row actions (Remove, Make game master), at least 44px tall.
 - Danger: solid red, only for confirming a removal that ends the round.
 - Disabled: 45% opacity with the reason written beside it.

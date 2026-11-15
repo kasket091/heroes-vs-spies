@@ -1,6 +1,6 @@
 // Screens. `view` and `screenFor` are pure (no DOM) so they can be tested in node;
 // `render` writes the markup and wires the buttons to `actions`.
-import { MIN_PLAYERS, safeStarters } from './game.js';
+import { MIN_PLAYERS, safeStarters, dealPair } from './game.js';
 
 export const GAME_NAME = 'Spy Game';
 
@@ -47,20 +47,20 @@ const wordsList = (w) => `<dl class="ruled pairs">
 
 function result(data) {
   const r = data.room.result;
-  const cancelled = data.room.phase === 'cancelled';
+  // Names come from the result itself: the spy may be the player who was removed.
+  const spy = `<b>${esc(r.spyName ?? nameOf(data, r.spyUid))}</b> ${spyTag}`;
   let head;
-  let outLine = '';
-  if (cancelled) head = '<h1>Round cancelled</h1><p>A player was removed, so this round stopped.</p>';
-  else {
-    head = `<h1>${r.winner === 'players' ? 'Players win!' : 'The spy wins!'}</h1>`;
-    outLine = r.votedOutUid
-      ? `<div><dt>Voted out</dt><dd>${esc(nameOf(data, r.votedOutUid))}, ${r.votedOutUid === r.spyUid ? 'who <b>was</b> the spy' : 'who was <b>not</b> the spy'}</dd></div>`
-      : '<div><dt>Voted out</dt><dd>Nobody. The votes were tied or nobody voted.</dd></div>';
+  if (data.room.phase === 'cancelled') {
+    head = `<h1>Round cancelled</h1><p>A player was removed, so this round stopped.</p><p class="verdict">The spy was ${spy}</p>`;
+  } else if (r.winner === 'players') {
+    head = `<h1>Players win!</h1><p class="verdict">The players caught the spy: ${spy}</p>`;
+  } else if (r.votedOutUid) {
+    const out = esc(r.votedOutName ?? nameOf(data, r.votedOutUid));
+    head = `<h1>The spy wins!</h1><p class="verdict"><b>${out}</b> was voted out, but was not the spy. The spy was ${spy}</p>`;
+  } else {
+    head = `<h1>The spy wins!</h1><p class="verdict">Nobody was voted out: the votes were tied, or nobody voted. The spy was ${spy}</p>`;
   }
-  return `<section class="result">${head}<dl class="ruled pairs">${outLine}
-    <div><dt>The spy was</dt><dd>${esc(nameOf(data, r.spyUid))} ${spyTag}</dd></div>
-    <div><dt>Everyone's word</dt><dd>${esc(r.common)}</dd></div>
-    <div><dt>Spy's word</dt><dd>${esc(r.spy)}</dd></div></dl></section>`;
+  return `<section class="result">${head}${wordsList(r)}</section>`;
 }
 
 const keepOpen = '<p class="keep"><b>Keep this screen open.</b> Your phone runs the round.</p>';
@@ -70,8 +70,8 @@ function removeDuringRound(data, ui) {
   const rows = data.players.map((p) => (ui.confirmRemove === p.uid
     ? `<li class="confirm"><span>Remove ${esc(p.name)}? This ends the round.</span>
         <span class="row-actions">${btn('Yes, remove', 'remove', { arg: p.uid, kind: 'danger small', disabled: ui.busy })}${btn('Keep', 'cancelRemove', { kind: 'secondary small' })}</span></li>`
-    : `<li><span>${esc(p.name)}</span><span class="row-actions">${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy })}</span></li>`)).join('');
-  return `<details class="manage"><summary>Remove a player</summary><ol class="ruled">${rows}</ol></details>`;
+    : `<li><span>${esc(p.name)}</span><span class="row-actions">${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy, extra: ` aria-label="Remove ${esc(p.name)}"` })}</span></li>`)).join('');
+  return `<details class="manage"${ui.confirmRemove ? ' open' : ''}><summary>Remove a player</summary><ol class="ruled">${rows}</ol></details>`;
 }
 
 const screens = {
@@ -99,15 +99,19 @@ const screens = {
     const { room, players } = data;
     const short = players.length < MIN_PLAYERS;
     const rows = players.map((p) => `<li><span>${esc(p.name)}</span><span class="row-actions">
-      ${btn('Make game master', 'makeGm', { arg: p.uid, kind: 'secondary small', disabled: ui.busy })}
-      ${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy })}</span></li>`).join('');
+      ${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy, extra: ` aria-label="Remove ${esc(p.name)}"` })}</span></li>`).join('');
+    // Kept apart from Remove so a slip on one row cannot hit the other action.
+    const handOver = players.length ? `<details class="manage"><summary>Hand over the game master role</summary>
+      <p class="hint">The new game master sees both words and the spy. You join as a player.</p>
+      <ul class="ruled">${players.map((p) => `<li>${btn(`Make ${esc(p.name)} game master`, 'makeGm', { arg: p.uid, kind: 'choice', disabled: ui.busy })}</li>`).join('')}</ul></details>` : '';
     return `${room.phase === 'lobby' ? '' : result(data)}
-      <section class="room-code" aria-label="Room code"><p>Room code</p><p class="big">${esc(code)}</p><p>Read it out loud so players can join.</p></section>
+      <section class="room-code">${room.phase === 'lobby' ? '<h1 class="label">Room code</h1>' : '<h2 class="label">Room code</h2>'}<p class="big">${esc(code)}</p><p>Read it out loud so players can join.</p></section>
       <h2>Players (${players.length})</h2>
       ${players.length ? `<ol class="ruled numbered">${rows}</ol>` : '<p>No players yet.</p>'}
       ${btn('New round', 'newRound', { disabled: short || ui.busy, extra: short ? ' aria-describedby="why-not"' : '' })}
       ${short ? `<p id="why-not" class="hint">Needs at least ${MIN_PLAYERS} players. ${players.length} joined so far.</p>` : ''}
-      ${errorLine(ui)}`;
+      ${errorLine(ui)}
+      ${handOver}`;
   },
 
   words: ({ ui }) => `<h1>Words for this round</h1>
@@ -191,20 +195,45 @@ export function view(s) {
 <main class="page" data-screen="${screen}">${screens[screen]({ ...s, ui: s.ui || {} })}</main>`;
 }
 
+// A pair different from `current` in either order, dealt with a random spy side.
+export function nextPair(pairs, current, rand = Math.random) {
+  const same = (p) => current && p.includes(current.common) && p.includes(current.spy);
+  const pool = pairs.filter((p) => !same(p));
+  return dealPair(pool[Math.floor(rand() * pool.length)], rand);
+}
+
+// UI state that must not outlive its cause, given the previous and next state.
+export function settle(prev, next) {
+  const ui = { ...next.ui };
+  if (!prev) return ui;
+  if (screenFor(prev) !== screenFor(next)) ui.error = null;
+  const gm = (x) => !!x.data?.room && x.data.room.gmUid === x.uid;
+  if (gm(prev) !== gm(next)) Object.assign(ui, { view: null, pair: null });
+  if (prev.data?.room?.round !== next.data?.room?.round) Object.assign(ui, { voted: false, confirmRemove: null });
+  return ui;
+}
+
+const TAP_GUARD_MS = 300;
+
 export function render(root, s, actions) {
   const html = view(s);
   // Same markup: leave the DOM alone so typing and focus survive unrelated updates.
   if (root.renderedHtml === html) return;
+  // A new screen (or the Remove confirmation) under the finger: drop the second tap of a double tap.
+  const key = `${screenFor(s)}:${s.ui.confirmRemove ?? ''}`;
+  if (root.screenKey !== key) root.tapsFrom = Date.now() + TAP_GUARD_MS;
+  root.screenKey = key;
   root.renderedHtml = html;
   root.innerHTML = html;
+  const ready = () => Date.now() >= root.tapsFrom;
   for (const input of root.querySelectorAll('input')) {
     input.value = s.ui.fields[input.name] ?? '';
     input.addEventListener('input', () => actions.setField(input.name, input.value));
   }
   for (const b of root.querySelectorAll('[data-action]')) {
-    b.addEventListener('click', () => actions[b.dataset.action](b.dataset.arg));
+    b.addEventListener('click', () => { if (ready()) actions[b.dataset.action](b.dataset.arg); });
   }
   for (const f of root.querySelectorAll('[data-submit]')) {
-    f.addEventListener('submit', (e) => { e.preventDefault(); actions[f.dataset.submit](); });
+    f.addEventListener('submit', (e) => { e.preventDefault(); if (ready()) actions[f.dataset.submit](); });
   }
 }

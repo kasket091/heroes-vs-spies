@@ -151,6 +151,8 @@ describe('room data layer', () => {
     const { room } = await state('gm', code, (s) => s.room?.phase === 'reveal');
     expect(room.result.winner).toBe('players');
     expect(room.result.votedOutUid).toBe(secret.spyUid);
+    const spyName = `Player${idOf(secret.spyUid).slice(1)}`;
+    expect(room.result).toMatchObject({ spyName, votedOutName: spyName });
   });
 
   it('closeVoting twice writes one result', async () => {
@@ -168,7 +170,18 @@ describe('room data layer', () => {
     await voting(code);
     await closeVoting(u.gm.db, code);
     const { room } = await state('gm', code, (s) => s.room?.phase === 'reveal');
-    expect(room.result).toMatchObject({ winner: 'spy', tie: true });
+    expect(room.result).toMatchObject({ winner: 'spy', tie: true, votedOutName: null });
+    expect(room.result.spyName).toMatch(/^Player[1-4]$/);
+  });
+
+  it("removePlayer of the spy during 'clues' keeps the spy's name in the result", async () => {
+    const code = await lobby(4);
+    const { secret } = await deal(code);
+    await removePlayer(u.gm.db, code, secret.spyUid);
+    const { room, players } = await state('gm', code, (s) => s.room?.phase === 'cancelled');
+    expect(players.map((p) => p.uid)).not.toContain(secret.spyUid);
+    expect(room.result.spyName).toBe(`Player${idOf(secret.spyUid).slice(1)}`);
+    expect(room.result.votedOutName).toBe(null);
   });
 
   it("removePlayer during 'clues' cancels with the secret result", async () => {

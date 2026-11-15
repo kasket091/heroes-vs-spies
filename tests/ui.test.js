@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { screenFor, view } from '../src/ui.js';
+import { describe, it, expect, vi } from 'vitest';
+import { screenFor, view, nextPair, settle, render } from '../src/ui.js';
+import { isRoomCode } from '../src/game.js';
 
 const players = ['a', 'b', 'c', 'd'].map((uid) => ({ uid, name: uid.toUpperCase() }));
 const room = (over = {}) => ({
@@ -70,5 +71,104 @@ describe('view', () => {
     const html = view(st('gm', { ...round, phase: 'voting', starterUid: 'a' }, { votesCast: 2, secret: { common: 'Cola', spy: 'Water', spyUid: 'c', round: 1 } }));
     expect(html).toContain('2 of 4');
     expect(html).toContain('Keep this screen open');
+  });
+});
+
+describe('result screens use the names stored in the result', () => {
+  const gone = (phase, r) => {
+    const s = st('a', { phase, result: r });
+    s.data.players = players.filter((p) => p.uid !== r.spyUid && p.uid !== r.votedOutUid);
+    return view(s);
+  };
+  const base = { tie: false, common: 'Cola', spy: 'Water', spyUid: 'zz', spyName: 'Cara' };
+  it('cancelled after the spy was removed still names the spy', () => {
+    const html = gone('cancelled', { ...base, votedOutUid: null, winner: null, votedOutName: null });
+    expect(html).toContain('Round cancelled');
+    expect(html).toContain('Cara');
+    expect(html).not.toContain('who left');
+  });
+  it('spy caught: names the spy once', () => {
+    const html = gone('reveal', { ...base, votedOutUid: 'zz', votedOutName: 'Cara', winner: 'players' });
+    expect(html).toContain('Players win!');
+    expect(html.match(/Cara/g).length).toBe(1);
+  });
+  it('someone else voted out: says who, that they were not the spy, and who was', () => {
+    const html = gone('reveal', { ...base, votedOutUid: 'yy', votedOutName: 'Ben', winner: 'spy' });
+    expect(html).toContain('The spy wins!');
+    expect(html).toMatch(/Ben<\/b> was voted out, but was not the spy/);
+    expect(html.match(/Cara/g).length).toBe(1);
+  });
+  it('tie: nobody voted out, names the spy once', () => {
+    const html = gone('reveal', { ...base, tie: true, votedOutUid: null, votedOutName: null, winner: 'spy' });
+    expect(html).toContain('Nobody was voted out');
+    expect(html.match(/Cara/g).length).toBe(1);
+  });
+});
+
+describe('nextPair', () => {
+  const list = [['Cola', 'Water'], ['Dog', 'Cat'], ['Sun', 'Moon']];
+  it('never offers the pair just shown, in either order', () => {
+    for (let i = 0; i < 200; i++) {
+      const cur = { common: 'Water', spy: 'Cola' };
+      const p = nextPair(list, cur);
+      expect([p.common, p.spy].sort()).not.toEqual(['Cola', 'Water']);
+    }
+  });
+  it('works with no current pair', () => {
+    const p = nextPair(list, null, () => 0);
+    expect([p.common, p.spy].sort()).toEqual(['Cola', 'Water']);
+  });
+});
+
+describe('isRoomCode', () => {
+  it('accepts 4 letters from the code alphabet only', () => {
+    expect(isRoomCode('KPRT')).toBe(true);
+    for (const bad of ['', 'KPR', 'KPRTX', 'kprt', 'KPR1', 'KPRI', 'KPRO', 'KP/T', 'KPRL']) expect(isRoomCode(bad)).toBe(false);
+  });
+});
+
+describe('settle', () => {
+  const s1 = st('gm', {}, {}, { error: 'Type two different words.', view: 'words', pair: { common: 'a', spy: 'b' } });
+  it('clears the error when the screen changes, keeps it when it does not', () => {
+    expect(settle(s1, s1).error).toBe('Type two different words.');
+    const next = { ...s1, ui: { ...s1.ui, view: null } };
+    expect(settle(s1, next).error).toBe(null);
+  });
+  it('resets view and pair when the game master role changes', () => {
+    const handed = st('gm', { gmUid: 'a' }, {}, s1.ui);
+    expect(settle(s1, handed)).toMatchObject({ view: null, pair: null });
+  });
+  it('resets voted and confirmRemove when the round changes', () => {
+    const a = st('a', { round: 1 }, {}, { voted: true, confirmRemove: 'b' });
+    const b = st('a', { round: 2 }, {}, a.ui);
+    expect(settle(a, b)).toMatchObject({ voted: false, confirmRemove: null });
+  });
+});
+
+describe('render ignores taps right after the screen changes', () => {
+  const fakeRoot = () => {
+    const button = { dataset: { action: 'remove', arg: 'b' }, addEventListener(_, f) { this.click = f; } };
+    return { button, querySelectorAll: (sel) => (sel === '[data-action]' ? [button] : []) };
+  };
+  it('drops a tap within 300ms of a changed render, accepts it after', () => {
+    vi.useFakeTimers();
+    try {
+      const root = fakeRoot();
+      const remove = vi.fn();
+      render(root, st('gm', {}), { remove });
+      root.button.click();
+      expect(remove).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(301);
+      root.button.click();
+      expect(remove).toHaveBeenCalledWith('b');
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('remove during a round', () => {
+  it('keeps the Remove section open while asking to confirm', () => {
+    const s = st('gm', { ...round, phase: 'clues', starterUid: 'a' }, { secret: { common: 'Cola', spy: 'Water', spyUid: 'c', round: 1 } }, { confirmRemove: 'c' });
+    expect(view(s)).toContain('<details class="manage" open>');
+    expect(view(s)).toContain('Remove C? This ends the round.');
   });
 });

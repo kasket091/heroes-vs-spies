@@ -3,8 +3,8 @@ import pairs from '../words/word-pairs.json';
 import { firebaseConfig } from './firebase-config.js';
 import { initFirebase, signIn } from './firebase.js';
 import * as api from './room.js';
-import { dealPair, validPair } from './game.js';
-import { render, GAME_NAME } from './ui.js';
+import { validPair, isRoomCode } from './game.js';
+import { render, settle, nextPair, GAME_NAME } from './ui.js';
 
 document.title = GAME_NAME;
 const root = document.getElementById('app');
@@ -40,8 +40,11 @@ const friendly = (e) => KNOWN[e.message] || (ROOM_ERRORS.includes(e.message) ? `
 const votedKey = () => `spy-voted:${s.uid}:${s.code}:${s.data?.room?.round}`;
 const readVoted = () => { try { return localStorage.getItem(votedKey()) === '1'; } catch { return false; } };
 
+let last = null;
 const update = () => {
+  s.ui = settle(last, s);
   s.ui.voted = s.ui.voted || (!!s.data?.room && readVoted());
+  last = { ...s, ui: { ...s.ui } };
   render(root, s, actions);
 };
 
@@ -65,14 +68,8 @@ function openRoom(code) {
   history.replaceState(null, '', `?${params}`);
   unsubscribe();
   s.data = undefined;
-  let round;
   unsubscribe = api.subscribe(db, code, s.uid, (data) => {
     s.data = data;
-    if (data.room && data.room.round !== round) {
-      round = data.room.round;
-      s.ui.voted = false;
-      s.ui.confirmRemove = null;
-    }
     autoClose(data);
     update();
   });
@@ -85,13 +82,6 @@ function autoClose({ room, votesCast }) {
   if (votesCast !== room.roundPlayers.length || closingRound === room.round) return;
   closingRound = room.round;
   api.closeVoting(db, s.code).catch(() => { closingRound = null; });
-}
-
-function nextPair() {
-  let pair;
-  do pair = dealPair(pairs[Math.floor(Math.random() * pairs.length)]);
-  while (s.ui.pair && pair.common === s.ui.pair.common && pair.spy === s.ui.pair.spy);
-  return pair;
 }
 
 const deal = (common, spy) => run(async () => {
@@ -108,11 +98,13 @@ const actions = {
   join: () => run(async () => {
     const code = s.ui.fields.code.trim().toUpperCase();
     if (!code) throw new Error('Code needed');
+    // Not a code the app could have made: never reaches Firestore.
+    if (!isRoomCode(code)) throw new Error('Room not found');
     await api.joinRoom(db, code, s.uid, s.ui.fields.name);
     openRoom(code);
   }),
-  newRound: () => { Object.assign(s.ui, { view: 'words', pair: nextPair(), error: null }); update(); },
-  skip: () => { s.ui.pair = nextPair(); update(); },
+  newRound: () => { Object.assign(s.ui, { view: 'words', pair: nextPair(pairs, null), error: null }); update(); },
+  skip: () => { Object.assign(s.ui, { pair: nextPair(pairs, s.ui.pair), error: null }); update(); },
   back: () => { Object.assign(s.ui, { view: null, error: null }); update(); },
   usePair: () => deal(s.ui.pair.common, s.ui.pair.spy),
   useOwn: () => {
@@ -140,7 +132,8 @@ const actions = {
 root.innerHTML = '<p class="status" role="status">Loading…</p>';
 signIn(auth).then((uid) => {
   s.uid = uid;
-  if (s.code) openRoom(s.code);
+  // A malformed ?room= shows "Room not found" on the join form without touching Firestore.
+  if (s.code && !isRoomCode(s.code)) { s.data = { room: null, players: [] }; update(); } else if (s.code) openRoom(s.code);
   else update();
 }).catch(() => {
   s.code = null;

@@ -133,9 +133,15 @@ export async function closeVoting(db, code) {
       if (v.exists()) votes[id] = v.data().target;
     }
     const { votedOutUid, tie, winner } = tally(votes, secret.spyUid);
+    // Names are stored with the result so it still reads right after a player leaves.
+    const nameOf = async (id) => (await tx.get(sub(db, code, 'players', id))).data()?.name ?? null;
+    const spyName = await nameOf(secret.spyUid);
+    const votedOutName = votedOutUid ? await nameOf(votedOutUid) : null;
     tx.update(roomRef(db, code), {
       phase: 'reveal',
-      result: { votedOutUid, tie, winner, spyUid: secret.spyUid, common: secret.common, spy: secret.spy },
+      result: {
+        votedOutUid, tie, winner, spyUid: secret.spyUid, common: secret.common, spy: secret.spy, spyName, votedOutName,
+      },
     });
   });
 }
@@ -144,14 +150,16 @@ export async function closeVoting(db, code) {
 export async function removePlayer(db, code, uid) {
   const room = await getRoom(db, code);
   const batch = writeBatch(db);
-  batch.delete(sub(db, code, 'players', uid));
   if (room.phase === 'clues' || room.phase === 'voting') {
     const { common, spy, spyUid } = (await getDoc(sub(db, code, 'gm', 'secret'))).data();
+    // Read before the delete below: the removed player may be the spy.
+    const spyName = (await getDoc(sub(db, code, 'players', spyUid))).data()?.name ?? null;
     batch.update(roomRef(db, code), {
       phase: 'cancelled',
-      result: { votedOutUid: null, tie: false, winner: null, spyUid, common, spy },
+      result: { votedOutUid: null, tie: false, winner: null, spyUid, common, spy, spyName, votedOutName: null },
     });
   }
+  batch.delete(sub(db, code, 'players', uid));
   await batch.commit();
 }
 

@@ -41,7 +41,10 @@ export function tally(votes, spyId) {
   return { votedOutUid: top[0], tie: false, winner: top[0] === spyId ? 'players' : 'spy' };
 }
 
+const CODE_LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+
 export function newRoomCode(rand = Math.random) {
-  const letters = 'ABCDEFGHJKMNPQRSTUVWXYZ';
-  return Array.from({ length: 4 }, () => pick(letters, rand)).join('');
+  return Array.from({ length: 4 }, () => pick(CODE_LETTERS, rand)).join('');
 }
+
+export const isRoomCode = (code) => new RegExp(`^[${CODE_LETTERS}]{4}$`).test(code);
