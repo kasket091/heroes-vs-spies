@@ -11,6 +11,7 @@ const KNOWN = {
   'Code needed': 'Type the room code.',
   'Not enough players': `Not enough players. You need at least ${MIN_PLAYERS}.`,
   'Invalid word pair': 'Type two different words.',
+  'Bad clock': "Your phone's date looks wrong. Fix it and try again.",
   'Old room': 'This room is from an older version. Create a new one.',
 };
 const ROOM_ERRORS = ['Round already running', 'No round to start', 'Not a safe starter', 'Cannot open voting yet', 'Player not found'];
@@ -178,7 +179,7 @@ const screens = {
       ${short ? `<p id="why-not" class="hint">Needs at least ${MIN_PLAYERS} players. ${players.length} joined so far.</p>` : ''}
       ${errorLine(ui)}
       ${handOver}
-      ${leaveBtn}<p class="hint">The room stays open. Type its code to come back.</p>`;
+      ${leaveBtn}<p class="hint">${players.length ? 'The room stays open. Type its code to come back.' : 'Nobody has joined, so leaving deletes this room.'}</p>`;
   },
 
   words: ({ ui }) => `<h1>Words for this round</h1>

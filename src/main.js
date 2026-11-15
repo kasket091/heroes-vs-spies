@@ -144,6 +144,7 @@ const actions = {
   cancelRemove: () => { s.ui.confirmRemove = null; update(); },
   leave: () => run(async () => {
     if (s.data?.room?.gmUid !== s.uid) await api.leaveRoom(db, s.code, s.uid);
+    else await api.deleteRoom(db, s.code);
     remembered(null);
     s.ui.fields.code = '';
     leaveRoom();

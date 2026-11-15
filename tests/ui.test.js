@@ -406,3 +406,31 @@ describe('friendly errors', () => {
     expect(friendly(new Error('boom'))).toContain('Something went wrong');
   });
 });
+
+describe('room cleanup screens', () => {
+  const noPlayers = (uid, over) => ({ ...st(uid, over), data: { ...st(uid, over).data, players: [] } });
+  it('leave line, empty lobby', () => {
+    const html = view(noPlayers('gm'));
+    expect(html).toContain('Leave room');
+    expect(html).toContain('Nobody has joined, so leaving deletes this room.');
+    expect(html).not.toContain('The room stays open.');
+  });
+  it('leave with players', () => {
+    const html = view(st('gm'));
+    expect(html).toContain('The room stays open.');
+    expect(html).not.toContain('leaving deletes this room');
+  });
+  it('no leave mid-game: clues, voting and result screens have no Leave room', () => {
+    const base = { ...game(), starterUid: 'a' };
+    for (const phase of ['clues', 'voting', 'result']) {
+      const s = st('gm', { ...base, phase, result: phase === 'result' ? notSpy : null }, { secret });
+      expect(view(s)).not.toContain('Leave room');
+    }
+  });
+  it('gone room: join screen for a game master uid and a player uid', () => {
+    for (const uid of ['gm', 'a']) expect(screenFor({ uid, code: 'ABCD', data: { room: null, players: [] }, ui: { fields: {} } })).toBe('join');
+  });
+  it('clock error maps to a plain message', () => {
+    expect(friendly(new Error('Bad clock'))).toBe("Your phone's date looks wrong. Fix it and try again.");
+  });
+});

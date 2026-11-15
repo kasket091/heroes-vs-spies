@@ -1,11 +1,12 @@
-import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
+import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { deleteApp } from 'firebase/app';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { starterChoices } from '../src/game.js';
 import { initFirebase, signIn } from '../src/firebase.js';
 import {
   leaveRoom, createRoom, joinRoom, subscribe, dealWords, nextRound, pickStarter, openVoting,
-  castVote, closeVoting, removePlayer, handOverGm,
+  castVote, closeVoting, removePlayer, handOverGm, deleteRoom,
 } from '../src/room.js';
 
 const config = { apiKey: 'fake', projectId: 'demo-spy' };
@@ -56,7 +57,7 @@ const playRound = async (code, outUid, votersOnly) => {
 };
 const afterClose = (code, round) => state('gm', code, (s) => s.room?.round === round && ['result', 'gameOver'].includes(s.room.phase));
 const hero = (room, secret) => room.active.find((x) => x !== secret.spyUid);
-const ROOM_KEYS = ['gmUid', 'gmName', 'round', 'roundPlayers', 'starterUid', 'result', 'phase', 'active', 'names', 'heroBench', 'spyBench', 'score', 'wordSet', 'needsWords', 'final', 'winner', 'setStart'];
+const ROOM_KEYS = ['gmUid', 'gmName', 'round', 'roundPlayers', 'starterUid', 'result', 'phase', 'active', 'names', 'heroBench', 'spyBench', 'score', 'wordSet', 'needsWords', 'final', 'winner', 'setStart', 'expiresAt'];
 // What a player can read on the room doc must not name the spy or either word.
 const expectNoSecrets = async (code) => {
   const room = await rawRoom(code);
@@ -626,5 +627,152 @@ describe('room data layer', () => {
     } finally {
       await Promise.all(extra.map((n) => deleteApp(u[n].auth.app)));
     }
+  });
+});
+
+describe('room cleanup', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const near = (ts, ms) => Math.abs(ts.toMillis() - (Date.now() + ms)) < 60000;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const read = async (code, path, who = 'gm') => (await getDoc(doc(u[who].db, 'rooms', code, ...path))).data();
+  // Runs fn and checks the room's expiresAt moved later and is about 24 hours ahead.
+  const moves = async (code, fn) => {
+    const before = (await rawRoom(code)).expiresAt;
+    await sleep(15);
+    await fn();
+    const after = (await rawRoom(code)).expiresAt;
+    expect(after.toMillis()).toBeGreaterThan(before.toMillis());
+    expect(near(after, DAY)).toBe(true);
+  };
+  let env;
+  beforeAll(async () => { env = await initializeTestEnvironment({ projectId: 'demo-spy' }); });
+  afterAll(() => env.cleanup());
+  const asAdmin = (fn) => env.withSecurityRulesDisabled((ctx) => fn(ctx.firestore()));
+
+  it('createRoom sets expiresAt about 24 hours ahead', async () => {
+    const code = await createRoom(u.gm.db, u.gm.uid, 'Gina');
+    expect(near((await rawRoom(code)).expiresAt, DAY)).toBe(true);
+  });
+
+  it('every game master action moves expiresAt', async () => {
+    const code = await lobby(5);
+    await moves(code, () => dealWords(u.gm.db, code, 'cat', 'dog'));
+    const { secret, room } = await clues(code);
+    await moves(code, () => pickStarter(u.gm.db, code, firstStarter(room, secret.spyUid)));
+    await moves(code, () => openVoting(u.gm.db, code));
+    const out = hero(room, secret);
+    for (const id of room.active) await castVote(u[idOf(id)].db, code, id, id === out ? room.active.find((x) => x !== id) : out);
+    await moves(code, () => closeVoting(u.gm.db, code));
+    await moves(code, () => nextRound(db0(), code));
+    await moves(code, () => removePlayer(u.gm.db, code, room.active.find((x) => x !== out && x !== secret.spyUid)));
+  });
+  const db0 = () => u.gm.db;
+
+  it('removePlayer in the lobby, handOverGm, and the end-of-game write move expiresAt', async () => {
+    const code = await lobby(2);
+    await moves(code, () => removePlayer(u.gm.db, code, u.p2.uid));
+    await moves(code, () => handOverGm(u.gm.db, code, u.p1.uid));
+    const code2 = await lobby(4);
+    await deal(code2);
+    await asAdmin((d) => d.doc(`rooms/${code2}`).update({ phase: 'result', active: [u.p1.uid, u.p2.uid] }));
+    await moves(code2, () => nextRound(u.gm.db, code2)); // fewer than 3 left: the end-of-game write
+    expect((await rawRoom(code2)).phase).toBe('gameOver');
+  });
+
+  it('records under a room carry expiresAt about 7 days ahead', async () => {
+    const code = await lobby(4);
+    await deal(code);
+    const { room } = await clues(code);
+    await pickStarter(u.gm.db, code, firstStarter(room, (await read(code, ['gm', 'secret'])).spyUid));
+    await openVoting(u.gm.db, code);
+    await castVote(u.p1.db, code, u.p1.uid, u.p2.uid);
+    const week = 7 * DAY;
+    for (const path of [['players', u.p1.uid], ['private', u.p1.uid], ['gm', 'secret'], ['votes', `${room.round}_${u.p1.uid}`]]) {
+      expect(near((await read(code, path)).expiresAt, week)).toBe(true);
+    }
+  });
+
+  it('handOverGm gives the old game master a player doc that expires in 7 days', async () => {
+    const code = await lobby(2);
+    await handOverGm(u.gm.db, code, u.p1.uid);
+    expect(near((await read(code, ['players', u.gm.uid], 'p1')).expiresAt, 7 * DAY)).toBe(true);
+  });
+
+  it('a rejoin keeps the player\'s expiresAt', async () => {
+    const code = await lobby(1);
+    const before = (await read(code, ['players', u.p1.uid])).expiresAt;
+    await sleep(15);
+    await joinRoom(u.p1.db, code, u.p1.uid, 'Renamed');
+    const after = await read(code, ['players', u.p1.uid]);
+    expect(after.name).toBe('Renamed');
+    expect(after.expiresAt.isEqual(before)).toBe(true);
+  });
+
+  it('second day: a game master action moves the room ahead and the player list is intact', async () => {
+    const code = await lobby(4);
+    const yesterday = new Date(Date.now() - DAY);
+    await asAdmin(async (d) => {
+      await d.doc(`rooms/${code}`).update({ expiresAt: yesterday });
+      await d.doc(`rooms/${code}/players/${u.p1.uid}`).update({ expiresAt: yesterday });
+    });
+    await deal(code);
+    expect(near((await rawRoom(code)).expiresAt, DAY)).toBe(true);
+    expect((await state('gm', code)).players.map((p) => p.uid)).toContain(u.p1.uid);
+  });
+
+  it('deleteRoom with no players deletes the room and gm/secret', async () => {
+    const code = await createRoom(u.gm.db, u.gm.uid, 'Gina');
+    await asAdmin((d) => d.doc(`rooms/${code}/gm/secret`).set({ common: 'a' }));
+    expect(await deleteRoom(u.gm.db, code)).toBe(true);
+    expect(await rawRoom(code, 'gm')).toBeUndefined();
+    await asAdmin(async (d) => expect((await d.doc(`rooms/${code}/gm/secret`).get()).exists).toBe(false));
+  });
+
+  it('deleteRoom with a player returns false and deletes nothing', async () => {
+    const code = await lobby(1);
+    expect(await deleteRoom(u.gm.db, code)).toBe(false);
+    expect(await rawRoom(code)).toBeDefined();
+  });
+
+  it('deleteRoom refuses mid-game even with no player docs', async () => {
+    const code = await lobby(4);
+    await deal(code);
+    await asAdmin(async (d) => { for (const p of ['p1', 'p2', 'p3', 'p4']) await d.doc(`rooms/${code}/players/${u[p].uid}`).delete(); });
+    expect(await deleteRoom(u.gm.db, code)).toBe(false);
+    expect(await rawRoom(code)).toBeDefined();
+    await asAdmin((d) => d.doc(`rooms/${code}`).update({ phase: 'gameOver' }));
+    expect(await deleteRoom(u.gm.db, code)).toBe(true);
+  });
+
+  it('a gone room reads as null for the game master, an active player, a benched player and a late joiner', async () => {
+    const code = await lobby(5);
+    await deal(code);
+    const { room, secret } = await clues(code);
+    const out = hero(room, secret);
+    await playRound(code, out);
+    await afterClose(code, room.round);
+    await asAdmin((d) => d.doc(`rooms/${code}`).delete());
+    const active = idOf(room.active.find((x) => x !== out));
+    for (const who of ['gm', active, idOf(out), 'p6']) {
+      expect((await state(who, code, (x) => x.room === null && x.players)).room).toBeNull();
+    }
+    await expect(joinRoom(u.p6.db, code, u.p6.uid, 'Late')).rejects.toThrow('Room not found');
+  });
+
+  it('a phone more than 7 days slow: join and vote fail with Bad clock', async () => {
+    const code = await lobby(4);
+    const spy = vi.spyOn(Date, 'now');
+    const real = Date.now();
+    spy.mockReturnValue(real - 9 * DAY);
+    try {
+      await expect(joinRoom(u.p5.db, code, u.p5.uid, 'Slow')).rejects.toThrow('Bad clock');
+      spy.mockRestore();
+      await deal(code);
+      const { room, secret } = await clues(code);
+      await pickStarter(u.gm.db, code, firstStarter(room, secret.spyUid));
+      await openVoting(u.gm.db, code);
+      vi.spyOn(Date, 'now').mockReturnValue(real - 9 * DAY);
+      await expect(castVote(u.p1.db, code, u.p1.uid, u.p2.uid)).rejects.toThrow('Bad clock');
+    } finally { spy.mockRestore(); }
   });
 });

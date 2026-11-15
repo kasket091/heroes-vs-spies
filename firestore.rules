@@ -5,25 +5,31 @@ service cloud.firestore {
     function roomDoc(code) { return get(/databases/$(database)/documents/rooms/$(code)).data; }
     function isGm(code) { return signedIn() && roomDoc(code).gmUid == request.auth.uid; }
 
+    // Phones send their own clock + 7 days; 30 days of room covers a clock up to 7 days slow or 23 days fast.
+    function validExpiry(t) { return t is timestamp && t > request.time && t < request.time + duration.value(30, 'd'); }
+
     match /rooms/{code} {
       allow get: if signedIn();
       allow create: if signedIn() && request.resource.data.gmUid == request.auth.uid;
       allow update: if isGm(code);
+      allow delete: if isGm(code);
 
       match /players/{uid} {
         allow read: if signedIn();
         function validName() {
-          return request.resource.data.keys().hasOnly(['name', 'joinedAt'])
+          return request.resource.data.keys().hasOnly(['name', 'joinedAt', 'expiresAt'])
             && request.resource.data.name is string
             && request.resource.data.name.size() >= 1
             && request.resource.data.name.size() <= 20;
         }
         // getAfter: a hand-over creates the old game master's player doc in the batch that changes gmUid.
-        allow create: if signedIn() && request.auth.uid == uid && validName()
+        allow create: if signedIn() && request.auth.uid == uid && validName() && validExpiry(request.resource.data.expiresAt)
           && request.resource.data.joinedAt == request.time
           && getAfter(/databases/$(database)/documents/rooms/$(code)).data.gmUid != uid;
         allow update: if signedIn() && request.auth.uid == uid && validName()
-          && request.resource.data.joinedAt == resource.data.joinedAt;
+          && request.resource.data.joinedAt == resource.data.joinedAt
+          // get(): a player doc written before expiry existed has none, and keeps having none.
+          && request.resource.data.get('expiresAt', null) == resource.data.get('expiresAt', null);
         allow delete: if signedIn() && (request.auth.uid == uid || isGm(code));
       }
 
@@ -45,8 +51,9 @@ service cloud.firestore {
           && request.auth.uid in roomDoc(code).roundPlayers
           && request.resource.data.target in roomDoc(code).roundPlayers
           && request.resource.data.target != request.auth.uid
-          && request.resource.data.keys().hasOnly(['target', 'round'])
-          && request.resource.data.round == roomDoc(code).round;
+          && request.resource.data.keys().hasOnly(['target', 'round', 'expiresAt'])
+          && request.resource.data.round == roomDoc(code).round
+          && validExpiry(request.resource.data.expiresAt);
       }
     }
   }

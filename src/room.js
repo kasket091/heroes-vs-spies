@@ -1,11 +1,18 @@
 import {
   doc, collection, query, orderBy, getDoc, getDocs, setDoc, deleteDoc, onSnapshot,
-  writeBatch, runTransaction, serverTimestamp, where,
+  writeBatch, runTransaction, serverTimestamp, where, Timestamp,
 } from 'firebase/firestore';
 import {
   MIN_PLAYERS, starterChoices, speakingOrder, pickSpy, validPair, cleanName, newRoomCode,
   whoIsOut, scoreRound, stage, gameWinner,
 } from './game.js';
+
+export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+export const RECORD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Firestore deletes a document once its expiresAt has passed (the policy is switched on separately).
+// The phone's clock is used; the rules accept any clock up to 7 days slow or 23 days fast.
+const roomTtl = () => ({ expiresAt: Timestamp.fromMillis(Date.now() + ROOM_TTL_MS) });
+const recordTtl = () => ({ expiresAt: Timestamp.fromMillis(Date.now() + RECORD_TTL_MS) });
 
 const roomRef = (db, code) => doc(db, 'rooms', code);
 const sub = (db, code, ...path) => doc(db, 'rooms', code, ...path);
@@ -27,7 +34,7 @@ export async function createRoom(db, uid, rawName) {
       tx.set(roomRef(db, code), {
         gmUid: uid, gmName, phase: 'lobby', round: 0, roundPlayers: [], starterUid: null, result: null,
         active: [], names: {}, heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 },
-        wordSet: 0, needsWords: false, final: false, winner: null, setStart: false,
+        wordSet: 0, needsWords: false, final: false, winner: null, setStart: false, ...roomTtl(),
       });
       return true;
     });
@@ -50,11 +57,17 @@ export async function joinRoom(db, code, uid, rawName) {
   const taken = (await getDocs(playersQuery(db, code))).docs.some((d) => d.id !== uid && d.data().name.toLowerCase() === name.toLowerCase());
   if (taken || room.gmName.toLowerCase() === name.toLowerCase()) throw new Error('Name already taken');
   const ref = sub(db, code, 'players', uid);
-  await runTransaction(db, async (tx) => {
-    // Rejoining keeps the original joinedAt (and so the seat).
-    if ((await tx.get(ref)).exists()) tx.update(ref, { name });
-    else tx.set(ref, { name, joinedAt: serverTimestamp() });
-  });
+  try {
+    await runTransaction(db, async (tx) => {
+      // Rejoining keeps the original joinedAt (and so the seat) and expiresAt.
+      if ((await tx.get(ref)).exists()) tx.update(ref, { name });
+      else tx.set(ref, { name, joinedAt: serverTimestamp(), ...recordTtl() });
+    });
+  } catch (e) {
+    // The name and room were checked above: a refusal here is the expiry bound (a phone more than 7 days slow).
+    if (e.code === 'permission-denied') throw new Error('Bad clock');
+    throw e;
+  }
 }
 
 export function subscribe(db, code, uid, onState) {
@@ -130,7 +143,7 @@ async function readRoom(tx, db, code) {
 function endGame(tx, db, code, room, secret) {
   const known = secret?.wordSet === room.wordSet && [...room.active, ...room.spyBench].includes(secret.spyUid);
   tx.update(roomRef(db, code), {
-    phase: 'gameOver',
+    phase: 'gameOver', ...roomTtl(),
     winner: gameWinner(room.score),
     result: {
       ...blankResult,
@@ -158,14 +171,14 @@ export async function dealWords(db, code, common, spy, rand = Math.random) {
     // round keeps counting across games: vote ids are round_uid and the rules never let a vote be replaced.
     tx.update(roomRef(db, code), {
       phase: 'clues', wordSet, round: room.round + 1, roundPlayers: [...active], starterUid: null, result: null,
-      final: stage(active.length) === 'final', needsWords: false, setStart: true,
+      final: stage(active.length) === 'final', needsWords: false, setStart: true, ...roomTtl(),
       ...(fresh && {
         active, names: Object.fromEntries(players.map((p) => [p.id, p.name])),
         heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 }, winner: null,
       }),
     });
-    for (const id of active) tx.set(sub(db, code, 'private', id), { word: id === spyUid ? words.spy : words.common, wordSet });
-    tx.set(sub(db, code, 'gm', 'secret'), { ...words, spyUid, wordSet });
+    for (const id of active) tx.set(sub(db, code, 'private', id), { word: id === spyUid ? words.spy : words.common, wordSet, ...recordTtl() });
+    tx.set(sub(db, code, 'gm', 'secret'), { ...words, spyUid, wordSet, ...recordTtl() });
   });
 }
 
@@ -178,7 +191,7 @@ export async function nextRound(db, code) {
     if (room.needsWords) return;
     tx.update(roomRef(db, code), {
       round: room.round + 1, roundPlayers: [...room.active], starterUid: null, result: null,
-      final: stage(room.active.length) === 'final', phase: 'clues', setStart: false,
+      final: stage(room.active.length) === 'final', phase: 'clues', setStart: false, ...roomTtl(),
     });
   });
 }
@@ -189,7 +202,7 @@ export async function pickStarter(db, code, starterUid) {
     const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
     if (room.phase !== 'clues' || secret?.wordSet !== room.wordSet) throw new Error('No round to start');
     if (!starterChoices(room.roundPlayers, secret.spyUid, room.setStart).includes(starterUid)) throw new Error('Not a safe starter');
-    tx.update(roomRef(db, code), { roundPlayers: speakingOrder(room.roundPlayers, starterUid), starterUid });
+    tx.update(roomRef(db, code), { roundPlayers: speakingOrder(room.roundPlayers, starterUid), starterUid, ...roomTtl() });
   });
 }
 
@@ -197,13 +210,21 @@ export async function openVoting(db, code) {
   await runTransaction(db, async (tx) => {
     const room = await readRoom(tx, db, code);
     if (room.phase !== 'clues' || !room.starterUid) throw new Error('Cannot open voting yet');
-    tx.update(roomRef(db, code), { phase: 'voting' });
+    tx.update(roomRef(db, code), { phase: 'voting', ...roomTtl() });
   });
 }
 
 export async function castVote(db, code, uid, target) {
   const { round } = await getRoom(db, code);
-  await setDoc(sub(db, code, 'votes', `${round}_${uid}`), { target, round });
+  try {
+    await setDoc(sub(db, code, 'votes', `${round}_${uid}`), { target, round, ...recordTtl() });
+  } catch (e) {
+    if (e.code !== 'permission-denied') throw e;
+    // Refused while the vote is still open for this round: the expiry bound (a phone more than 7 days slow).
+    const now = await getRoom(db, code);
+    if (now.phase === 'voting' && now.round === round) throw new Error('Bad clock');
+    throw e;
+  }
 }
 
 export async function closeVoting(db, code, rand = Math.random) {
@@ -223,10 +244,10 @@ export async function closeVoting(db, code, rand = Math.random) {
       ...((wasSpy || room.final) && { spyUid: secret.spyUid, spyName: room.names[secret.spyUid] ?? null, common: secret.common, spy: secret.spy }),
     };
     if (room.final) {
-      tx.update(roomRef(db, code), { score, result, winner: gameWinner(score), phase: 'gameOver' });
+      tx.update(roomRef(db, code), { score, result, winner: gameWinner(score), phase: 'gameOver', ...roomTtl() });
     } else {
       tx.update(roomRef(db, code), {
-        score, result, needsWords: wasSpy, phase: 'result',
+        score, result, needsWords: wasSpy, phase: 'result', ...roomTtl(),
         active: room.active.filter((id) => id !== outUid),
         [wasSpy ? 'spyBench' : 'heroBench']: [...room[wasSpy ? 'spyBench' : 'heroBench'], outUid],
       });
@@ -251,8 +272,8 @@ export async function removePlayer(db, code, uid) {
           ...(isSpy && { spyUid: uid, spyName: room.names[uid] ?? null, common: secret.common, spy: secret.spy }),
         };
       }
-      tx.update(roomRef(db, code), update);
-    }
+      tx.update(roomRef(db, code), { ...update, ...roomTtl() });
+    } else tx.update(roomRef(db, code), roomTtl());
     tx.delete(sub(db, code, 'players', uid));
   });
 }
@@ -265,8 +286,21 @@ export async function handOverGm(db, code, newGmUid) {
   const next = await getDoc(sub(db, code, 'players', newGmUid));
   if (!next.exists()) throw new Error('Player not found');
   const batch = writeBatch(db);
-  batch.update(roomRef(db, code), { gmUid: newGmUid, gmName: next.data().name });
+  batch.update(roomRef(db, code), { gmUid: newGmUid, gmName: next.data().name, ...roomTtl() });
   batch.delete(sub(db, code, 'players', newGmUid));
-  batch.set(sub(db, code, 'players', room.gmUid), { name: room.gmName, joinedAt: serverTimestamp() });
+  batch.set(sub(db, code, 'players', room.gmUid), { name: room.gmName, joinedAt: serverTimestamp(), ...recordTtl() });
   await batch.commit();
+}
+
+// Game master only. The rules cannot see the player list, so the check is here: a room with players
+// (or a game in progress) is left alone. Returns whether the room was deleted.
+export async function deleteRoom(db, code) {
+  const room = await getDoc(roomRef(db, code));
+  if (!room.exists() || !['lobby', 'gameOver'].includes(room.data().phase)) return false;
+  if (!(await getDocs(playersQuery(db, code))).empty) return false;
+  const batch = writeBatch(db);
+  batch.delete(sub(db, code, 'gm', 'secret'));
+  batch.delete(roomRef(db, code));
+  await batch.commit();
+  return true;
 }
