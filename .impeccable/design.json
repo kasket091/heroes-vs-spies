@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-15T14:20:00Z",
+  "title": "Design System: Spy Game",
+  "extensions": {
+    "colorMeta": {
+      "cobalt": { "role": "primary", "displayName": "Pad Cover Cobalt" },
+      "paper": { "role": "neutral", "displayName": "Newsprint Page" },
+      "rule": { "role": "neutral", "displayName": "Writing Rule Blue" },
+      "red": { "role": "tertiary", "displayName": "Red Pen" },
+      "margin": { "role": "tertiary", "displayName": "Margin Rule" }
+    },
+    "typographyMeta": {
+      "word": { "displayName": "Copybook Word", "purpose": "The player's secret word on the three-line guide." },
+      "room-code": { "displayName": "Room Code", "purpose": "Read out loud from the game master's phone." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "press", "value": "transform 100ms ease-out, background-color 150ms ease-out", "purpose": "Button press and hover only; off under reduced motion." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button", "kind": "button", "refersTo": "button-primary",
+      "description": "The one next step on a screen.",
+      "html": "<button class=\"ds-btn-primary\">Use these words</button>",
+      "css": ".ds-btn-primary { min-height: 3rem; width: 100%; padding: 0.5rem 1.25rem; border: 2px solid transparent; border-radius: 0.4rem; background: #1f4fa8; color: #fff; font: 700 1.125rem/1.5 Andika, 'Trebuchet MS', sans-serif; } .ds-btn-primary:hover { background: #163c84; } .ds-btn-primary:focus-visible { outline: 3px solid #1f4fa8; outline-offset: 3px; }"
+    },
+    {
+      "name": "Secondary Button", "kind": "button", "refersTo": "button-secondary",
+      "description": "The other choice, e.g. Skip.",
+      "html": "<button class=\"ds-btn-secondary\">Skip</button>",
+      "css": ".ds-btn-secondary { min-height: 3rem; width: 100%; padding: 0.5rem 1.25rem; border: 2px solid #1f2429; border-radius: 0.4rem; background: transparent; color: #1f2429; font: 700 1.125rem/1.5 Andika, 'Trebuchet MS', sans-serif; } .ds-btn-secondary:hover { background: #e6ebe7; } .ds-btn-secondary:focus-visible { outline: 3px solid #1f4fa8; outline-offset: 3px; }"
+    },
+    {
+      "name": "Choice Line", "kind": "button", "refersTo": "button-choice",
+      "description": "A whole ruled line you can tap: a name to pick or vote for.",
+      "html": "<button class=\"ds-choice\">Lola Bing</button>",
+      "css": ".ds-choice { min-height: 2.75rem; width: 100%; text-align: left; padding: 0.5rem 0.75rem; border: 2px solid #6f93c8; border-radius: 0.4rem; background: #f3f5f2; color: #1f4fa8; font: 700 1.25rem/1.5 Andika, 'Trebuchet MS', sans-serif; } .ds-choice:hover { background: #1f4fa8; color: #fff; } .ds-choice:focus-visible { outline: 3px solid #1f4fa8; outline-offset: 3px; }"
+    },
+    {
+      "name": "Text Field", "kind": "input", "refersTo": "input",
+      "description": "Name, room code, custom words.",
+      "html": "<label class=\"ds-label\">Your name<input class=\"ds-input\"></label>",
+      "css": ".ds-label { display: flex; flex-direction: column; gap: 0.25rem; font: 700 1.125rem/1.5 Andika, sans-serif; color: #1f2429; } .ds-input { min-height: 3rem; padding: 0.5rem 0.75rem; border: 2px solid #46505a; border-radius: 0.4rem; background: #fff; font: 400 1.25rem/1.5 Andika, sans-serif; } .ds-input:focus-visible { outline: 3px solid #1f4fa8; outline-offset: 1px; border-color: #1f4fa8; }"
+    },
+    {
+      "name": "Spy Tag", "kind": "chip", "refersTo": "button-danger",
+      "description": "Written SPY mark beside a name; game master and results only.",
+      "html": "<span class=\"ds-tag\">Spy</span>",
+      "css": ".ds-tag { display: inline-block; padding: 0 0.5rem; border: 2px solid #b3261e; border-radius: 0.4rem; color: #b3261e; font: 700 0.875rem/1.6 Andika, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }"
+    },
+    {
+      "name": "Copybook Word", "kind": "custom", "refersTo": "word",
+      "description": "The player's word written on a three-line guide.",
+      "html": "<p class=\"ds-word\">Halo-halo</p>",
+      "css": ".ds-word { --g: 1.45em; margin: 0; font: 700 3.5rem/var(--g) Andika, sans-serif; color: #1f2429; background-image: linear-gradient(transparent 0.3em, #6f93c8 0.3em, #6f93c8 calc(0.3em + 1px), transparent calc(0.3em + 1px) 0.62em, #b7cbe4 0.62em, #b7cbe4 calc(0.62em + 1px), transparent calc(0.62em + 1px) 1.1em, #6f93c8 1.1em, #6f93c8 calc(1.1em + 2px), transparent calc(1.1em + 2px)); background-size: 100% var(--g); }"
+    },
+    {
+      "name": "Pad Cover", "kind": "nav", "refersTo": "cover",
+      "description": "Title band with the room code.",
+      "html": "<header class=\"ds-cover\"><b>Spy Game</b><span>Room <b>KPRT</b></span></header>",
+      "css": ".ds-cover { display: flex; justify-content: space-between; align-items: center; min-height: 3.5rem; padding: 0.5rem 1rem; background: #1f4fa8; color: #fff; border-bottom: 0.375rem solid #163c84; font: 400 1rem/1.5 Andika, sans-serif; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Writing Pad",
+    "overview": "A cobalt pad cover over a newsprint page with blue writing rules and one red margin rule. Plain web controls; the world lends palette, type, density and the copybook word.",
+    "keyCharacteristics": ["Cobalt cover band", "Ruled rows at a 44px line pitch", "Red margin rule", "Andika throughout", "Word on a three-line guide"],
+    "rules": [{ "name": "The Red Pen Rule", "body": "Red marks only the spy and errors, always with a written word.", "section": "colors" }],
+    "dos": ["Write every state in words", "Keep player screens identical for spy and non-spy"],
+    "donts": ["Colour as the only signal", "Noir, dossier or redaction imagery", "Modals or alert()"]
+  }
+}
