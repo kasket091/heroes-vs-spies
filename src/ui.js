@@ -2,7 +2,7 @@
 // `render` writes the markup and wires the buttons to `actions`.
 import { MIN_PLAYERS, starterChoices, finalPoints, teams, dealPair } from './game.js';
 
-export const GAME_NAME = 'Spy Game';
+export const GAME_NAME = 'Heroes vs Spies';
 
 const KNOWN = {
   'Room not found': 'Room not found. Check the code with the game master.',

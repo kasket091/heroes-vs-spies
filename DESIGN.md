@@ -1,5 +1,5 @@
 ---
-name: Spy Game
+name: Heroes vs Spies
 description: A page from a school writing pad, for a family word game played out loud.
 colors:
   paper: "#f3f5f2"
@@ -93,7 +93,7 @@ components:
     height: "3rem"
 ---
 
-# Design System: Spy Game
+# Design System: Heroes vs Spies
 
 ## Overview
 

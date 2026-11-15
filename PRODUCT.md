@@ -45,7 +45,7 @@ The game master is a person in the room who sees everything: both words and who 
 
 ## Brand Commitments
 
-- Working title on screen: "Spy Game". Dave will pick a real name later, so the name must live in one place.
+- Name on screen: "Heroes vs Spies" (Dave, 2026-11-15). It is defined in one place, `GAME_NAME` in `src/ui.js`.
 - No logo, colours or fonts are fixed.
 
 ## Evidence on Hand
