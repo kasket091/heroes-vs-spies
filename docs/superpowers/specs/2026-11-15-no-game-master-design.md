@@ -136,3 +136,13 @@ Nothing else. The host's phone must not load the spy or the other word into anyt
 - Exact wording of the waiting, countdown and stalled lines.
 - Whether the 10 seconds is shown as a number or a moving bar.
 - Field names for the new-room marker, result time and voted list.
+
+## Changes after the reviews (2026-11-15)
+
+- **Close the vote now** (Claude's call, told to Dave): during a vote the host's collapsed section holds one more control beside Remove a player. It counts the votes cast so far. It exists so that a player who will not vote does not force a cancelled round; it is never part of normal play.
+- **Removing someone who left.** The host's remove list covers everyone still in the round, not only people on the player list, so a player who left mid-game can always be removed.
+- **Waiting line.** "Waiting for: ..." shows on every screen during a vote, before and after you vote, and on the bench.
+- **The "voted" mark** can only be set together with a real vote, enforced by the access rules.
+- **Word families are used evenly:** the first 63 deals in a room each come from a different family, so a returning family cannot be narrowed down from memory.
+- **Round screen:** the speaking order and the vote buttons are one list.
+- **A background step that fails** on the host's phone is shown to the host as a message.
