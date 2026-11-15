@@ -21,9 +21,33 @@ export function cleanName(raw) {
   return raw.slice(0, 20).trim() || null;
 }
 
-// Only the first round of a word set protects the spy: repeated every round it would clear two more players each time.
-export const starterChoices = (activeIds, spyId, firstRound) =>
-  firstRound && activeIds.length >= 5 ? safeStarters(activeIds, spyId) : [...activeIds];
+// The virus is drawn afresh each round from everyone still in, the last carrier included.
+export const pickCarrier = (inGame, rand = Math.random) => pick(inGame, rand);
+
+// From 5 players two speak before the carrier.
+export const starterChoices = (ids, carrierUid) => (ids.length >= 5 ? safeStarters(ids, carrierUid) : [...ids]);
+
+// votes is { voter: target }. Catching the carrier pays each other voter who named them 1; otherwise the carrier gets 2 (4 in the final).
+export function roundGains({ outUid, carrierUid, votes, final }) {
+  if (outUid !== carrierUid) return { [carrierUid]: final ? 4 : 2 };
+  return Object.fromEntries(Object.entries(votes).filter(([voter, target]) => target === carrierUid && voter !== carrierUid).map(([voter]) => [voter, 1]));
+}
+
+// Highest points first, level points share a place (1, 1, 3), ties keep list order. Places continue from `start`.
+const place = (uids, points, start, group, names) => {
+  const sorted = uids.map((uid) => ({ uid, name: names[uid], points: points[uid] ?? 0, group })).sort((x, y) => y.points - x.points);
+  let first = 0;
+  return sorted.map((e, i) => { if (i && e.points !== sorted[i - 1].points) first = i; return { ...e, place: start + first }; });
+};
+
+export function ranking({ inGame, out, gone, points, names, carrierUid, caught, hadFinal }) {
+  const others = inGame.filter((u) => u !== carrierUid);
+  const podium = !hadFinal ? [] : caught
+    ? [...place(others, points, 1, 'podium', names), ...place([carrierUid], points, 3, 'podium', names)]
+    : [...place([carrierUid], points, 1, 'podium', names), ...place(others, points, 2, 'podium', names)];
+  const outRank = place(hadFinal ? out : [...inGame, ...out], points, podium.length + 1, 'out', names);
+  return [...podium, ...outRank, ...place(gone, points, podium.length + outRank.length + 1, 'gone', names)];
+}
 
 // Most votes goes out; a tie (or no votes) draws among the tied, in activeIds order.
 export function whoIsOut(votes, activeIds, rand = Math.random) {
@@ -78,8 +102,7 @@ export function pickUnusedPair(families, usedKeys, rand = Math.random) {
   return { key, pair: [families[f][i], families[f][j]], usedKeys: unused.length ? [...usedKeys, key] : [key] };
 }
 
-export const pickStarter = (seats, spyId, firstRound, rand = Math.random) =>
-  pick(starterChoices(seats, spyId, firstRound), rand);
+export const pickStarter = (ids, carrierUid, rand = Math.random) => pick(starterChoices(ids, carrierUid), rand);
 
 export const waitingFor = (roundPlayers, players, round) =>
   roundPlayers.filter((uid) => players.find((p) => p.uid === uid)?.votedRound !== round);
