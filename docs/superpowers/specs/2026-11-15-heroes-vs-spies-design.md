@@ -30,7 +30,7 @@ Today one vote ends the round. Dave wants a full game: players are voted out one
   - Heroes win: every active player who is not the spy, and everyone on the Hero bench.
   - Spies win: the final spy and everyone on the Spy bench.
 - Benched players do nothing. Their phone shows only the scoreboard.
-- The game master picks the first speaker every round. With 5 or more active players, at least 2 speak before the spy (as today). At the final 3 the game master picks anyone.
+- The game master picks the first speaker every round. In the first round after new words are dealt, with 5 or more active players, at least 2 speak before the spy. In later rounds with the same words, and with 4 or 3 active players, the game master picks anyone. (Changed 2026-11-15 after the final review, Dave's decision: applied every round, the rule cleared two more players each time and could leave one suspect.)
 
 ## Non-goals
 
@@ -51,7 +51,8 @@ Today one vote ends the round. Dave wants a full game: players are voted out one
 2. **Words.** The game master sees a word pair and approves or skips it, as today. This happens at the start of the game and again each time a spy is caught.
 3. **Deal.** The app picks a spy at random from the active players and sends each active player their word.
 4. **First speaker.** The game master taps who goes first.
-   - 5 or more active players: only safe starters are tappable (spy speaks third or later).
+   - First round of a word set with 5 or more active players: only safe starters are tappable (spy speaks third or later).
+   - Later rounds of the same word set: any player is tappable. (Dave, 2026-11-15)
    - 4 active players: any player is tappable. **(call: the 2-before rule would leave only 2 suspects)**
    - 3 active players: any player is tappable. (Dave)
 5. **Clues.** Out loud, in the order shown.
@@ -81,7 +82,7 @@ A 4-player game is the shortest: one round with 4, then the final battle with 3.
 ## Rules the app enforces
 
 - Minimum 4 players to start a game.
-- The safe-starter rule comes from one shared function, now given the number of active players: 5 or more applies the rule; 4 or 3 allows anyone.
+- The safe-starter rule comes from one shared function, given the number of active players and whether this is the first round of a word set: first round with 5 or more applies the rule; anything else allows anyone.
 - Final points = (the difference between the two scores) + 1.
 - **Removing or losing a player mid-game** **(call)**:
   - A benched player can be removed or leave freely; they stay listed on their bench by name.
