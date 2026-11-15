@@ -87,3 +87,7 @@ The task review found three faults in this design. Each fix is Claude's call, ma
 - **Records with no "delete after" time** (everything that exists today, and anything written by a phone still on the old page) never expire. Two guards stop them resurfacing: the app will not create a room under a code that still has player records, and the vote count ignores votes from anyone not in the current round. The one-time cleanup must delete everything under each room, not only the room.
 - **The lock record cannot be deleted** by anyone, the game master included.
 - **During the update only:** a game master still on the old page, in a room already used on the new page, stops refreshing the room's time; reloading the page fixes it.
+
+## Outcome at deploy (2026-11-15)
+
+Firebase refused the timed deletion: it needs billing enabled on the project. Dave chose to skip the timer. What is live: a room is deleted when its game master leaves it with nobody in it; rooms people walk away from are not deleted. Records still carry their "delete after" times, so the timer can be switched on later without another code change: enable billing, add `"indexes": "firestore.indexes.json"` back to the `firestore` section of `firebase.json`, and run `npx firebase deploy --only firestore:indexes`. Until then lock records never expire, so a used code is never reused.
