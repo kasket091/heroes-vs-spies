@@ -55,7 +55,7 @@ export function subscribe(db, code, uid, onState) {
       room: s.room,
       players: s.players,
       myWord: dealtIn && s.priv && s.priv.round === s.room.round ? s.priv.word : null,
-      secret: gmMode ? s.secret : null,
+      secret: gmMode && s.secret && s.secret.round === s.room.round ? s.secret : null,
       votesCast: gmMode && s.room ? s.votes.filter((v) => v.round === s.room.round).length : 0,
     });
   };
@@ -104,7 +104,9 @@ export async function dealRound(db, code, common, spy) {
 
 export async function pickStarter(db, code, starterUid) {
   const room = await getRoom(db, code);
-  const { spyUid } = (await getDoc(sub(db, code, 'gm', 'secret'))).data();
+  const secret = (await getDoc(sub(db, code, 'gm', 'secret'))).data();
+  if (room.phase !== 'clues' || secret?.round !== room.round) throw new Error('No round to start');
+  const { spyUid } = secret;
   if (!safeStarters(room.roundPlayers, spyUid).includes(starterUid)) throw new Error('Not a safe starter');
   await setDoc(roomRef(db, code), { roundPlayers: speakingOrder(room.roundPlayers, starterUid), starterUid }, { merge: true });
 }

@@ -33,6 +33,7 @@ test('cleanName', () => {
   expect(cleanName('  Ana ')).toBe('Ana');
   expect(cleanName('   ')).toBeNull();
   expect(cleanName('x'.repeat(30))).toHaveLength(20);
+  expect(cleanName('x'.repeat(19) + ' yyyy')).toBe('x'.repeat(19));
 });
 test('tally: spy caught', () => {
   expect(tally({ a: 'c', b: 'c', d: 'a' }, 'c')).toEqual({ votedOutUid: 'c', tie: false, winner: 'players' });

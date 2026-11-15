@@ -29,7 +29,7 @@ export function validPair(a, b) {
 }
 
 export function cleanName(raw) {
-  return raw.trim().slice(0, 20) || null;
+  return raw.slice(0, 20).trim() || null;
 }
 
 export function tally(votes, spyId) {

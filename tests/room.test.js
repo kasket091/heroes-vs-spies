@@ -45,6 +45,7 @@ const voting = async (code) => {
   await openVoting(u.gm.db, code);
   return secret;
 };
+const closeAfterCancel = (code) => removePlayer(u.gm.db, code, u.p4.uid).then(() => joinRoom(u.p4.db, code, u.p4.uid, 'Player4'));
 const idOf = (uid) => names.find((n) => u[n].uid === uid);
 
 describe('room data layer', () => {
@@ -66,7 +67,7 @@ describe('room data layer', () => {
 
   it('dealRound with 3 players rejects', async () => {
     const code = await lobby(3);
-    await expect(dealRound(u.gm.db, code, 'cat', 'dog')).rejects.toThrow();
+    await expect(dealRound(u.gm.db, code, 'cat', 'dog')).rejects.toThrow('Not enough players');
   });
 
   it('dealRound with 4 deals words, one differs, players cannot see secret', async () => {
@@ -80,6 +81,24 @@ describe('room data layer', () => {
     const s1 = await state('p1', code, (s) => s.myWord);
     expect(s1.secret).toBeNull();
     expect(s1.room.phase).toBe('clues');
+  });
+
+  it('pickStarter in lobby rejects with No round to start', async () => {
+    const code = await lobby(4);
+    await expect(pickStarter(u.gm.db, code, u.p1.uid)).rejects.toThrow('No round to start');
+  });
+
+  it('gm never sees a secret from another round after a second dealRound', async () => {
+    const code = await lobby(4);
+    await deal(code);
+    await closeAfterCancel(code);
+    const seen = [];
+    const off = subscribe(u.gm.db, code, u.gm.uid, (s) => seen.push(s));
+    await dealRound(u.gm.db, code, 'sun', 'moon');
+    await state('gm', code, (s) => s.secret?.round === 2);
+    off();
+    expect(seen.some((s) => s.room?.round === 2 && s.secret)).toBe(true);
+    expect(seen.filter((s) => s.secret).every((s) => s.secret.round === s.room.round)).toBe(true);
   });
 
   it('pickStarter with the spy rejects Not a safe starter', async () => {
