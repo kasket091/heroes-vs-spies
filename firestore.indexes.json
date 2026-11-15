@@ -1,0 +1,10 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "rooms", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "players", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "private", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "gm", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "votes", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+  ]
+}

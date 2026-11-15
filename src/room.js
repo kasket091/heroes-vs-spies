@@ -12,6 +12,24 @@ export const RECORD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // Firestore deletes a document once its expiresAt has passed (the policy is switched on separately).
 // The phone's clock is used; the rules accept any clock up to 7 days slow or 23 days fast.
 const roomTtl = () => ({ expiresAt: Timestamp.fromMillis(Date.now() + ROOM_TTL_MS) });
+// Outlives every record under a room (the rules cap those at 30 days), so a used room code cannot be created again
+// while leftovers of the old room may still exist. deleteRoom leaves it in place.
+export const LOCK_TTL_MS = 40 * 24 * 60 * 60 * 1000;
+const lockTtl = () => ({ expiresAt: Timestamp.fromMillis(Date.now() + LOCK_TTL_MS) });
+const lockRef = (db, code) => sub(db, code, 'gm', 'lock');
+// A refusal of a game master write that passes all other checks is the room's expiresAt in the past: a slow phone clock.
+const asGm = async (fn) => {
+  try { return await fn(); } catch (e) {
+    if (e.code === 'permission-denied') throw new Error('Bad clock');
+    throw e;
+  }
+};
+// Every game master write to the room refreshes the lock in the same transaction (writes come last).
+const gmTx = (db, code, fn) => asGm(() => runTransaction(db, async (tx) => {
+  const result = await fn(tx);
+  tx.set(lockRef(db, code), lockTtl());
+  return result;
+}));
 const recordTtl = () => ({ expiresAt: Timestamp.fromMillis(Date.now() + RECORD_TTL_MS) });
 
 const roomRef = (db, code) => doc(db, 'rooms', code);
@@ -27,18 +45,29 @@ async function getRoom(db, code) {
 export async function createRoom(db, uid, rawName) {
   const gmName = cleanName(rawName);
   if (!gmName) throw new Error('Name needed');
-  for (;;) {
+  // A refused create is a code whose lock still exists (the rules hide it from us) or a past expiresAt: after a few tries, blame the clock.
+  for (let refused = 0; ; ) {
     const code = newRoomCode();
-    const ok = await runTransaction(db, async (tx) => {
-      if ((await tx.get(roomRef(db, code))).exists()) return false;
-      tx.set(roomRef(db, code), {
-        gmUid: uid, gmName, phase: 'lobby', round: 0, roundPlayers: [], starterUid: null, result: null,
-        active: [], names: {}, heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 },
-        wordSet: 0, needsWords: false, final: false, winner: null, setStart: false, ...roomTtl(),
+    let ok;
+    try {
+      ok = await runTransaction(db, async (tx) => {
+        if ((await tx.get(roomRef(db, code))).exists()) return false;
+        tx.set(roomRef(db, code), {
+          gmUid: uid, gmName, phase: 'lobby', round: 0, roundPlayers: [], starterUid: null, result: null,
+          active: [], names: {}, heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 },
+          wordSet: 0, needsWords: false, final: false, winner: null, setStart: false, ...roomTtl(),
+        });
+        return true;
       });
-      return true;
-    });
-    if (ok) return code;
+    } catch (e) {
+      if (e.code !== 'permission-denied') throw e;
+      if (++refused >= 5) throw new Error('Bad clock');
+      continue;
+    }
+    if (ok) {
+      await asGm(() => setDoc(lockRef(db, code), lockTtl()));
+      return code;
+    }
   }
 }
 
@@ -64,9 +93,13 @@ export async function joinRoom(db, code, uid, rawName) {
       else tx.set(ref, { name, joinedAt: serverTimestamp(), ...recordTtl() });
     });
   } catch (e) {
-    // The name and room were checked above: a refusal here is the expiry bound (a phone more than 7 days slow).
-    if (e.code === 'permission-denied') throw new Error('Bad clock');
-    throw e;
+    if (e.code !== 'permission-denied') throw e;
+    // Name and format were checked above, so a refusal means the room is gone, this uid just became the
+    // game master, or (by elimination) the expiry bound: a phone more than 7 days slow.
+    const now = (await getDoc(roomRef(db, code))).data();
+    if (!now) throw new Error('Room not found');
+    if (now.gmUid === uid) return;
+    throw new Error('Bad clock');
   }
 }
 
@@ -156,7 +189,7 @@ function endGame(tx, db, code, room, secret) {
 
 export async function dealWords(db, code, common, spy, rand = Math.random) {
   const players = (await getDocs(playersQuery(db, code))).docs.map((d) => ({ id: d.id, name: d.data().name }));
-  await runTransaction(db, async (tx) => {
+  await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
     if (room.phase === 'result' && stage(room.active.length) === 'over') return endGame(tx, db, code, room, secret);
@@ -183,7 +216,7 @@ export async function dealWords(db, code, common, spy, rand = Math.random) {
 }
 
 export async function nextRound(db, code) {
-  await runTransaction(db, async (tx) => {
+  await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
     if (room.phase !== 'result') return;
@@ -197,7 +230,7 @@ export async function nextRound(db, code) {
 }
 
 export async function pickStarter(db, code, starterUid) {
-  await runTransaction(db, async (tx) => {
+  await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
     if (room.phase !== 'clues' || secret?.wordSet !== room.wordSet) throw new Error('No round to start');
@@ -207,7 +240,7 @@ export async function pickStarter(db, code, starterUid) {
 }
 
 export async function openVoting(db, code) {
-  await runTransaction(db, async (tx) => {
+  await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     if (room.phase !== 'clues' || !room.starterUid) throw new Error('Cannot open voting yet');
     tx.update(roomRef(db, code), { phase: 'voting', ...roomTtl() });
@@ -220,6 +253,8 @@ export async function castVote(db, code, uid, target) {
     await setDoc(sub(db, code, 'votes', `${round}_${uid}`), { target, round, ...recordTtl() });
   } catch (e) {
     if (e.code !== 'permission-denied') throw e;
+    // The vote is already in (a second tap, a retry): not an error.
+    if ((await getDoc(sub(db, code, 'votes', `${round}_${uid}`))).exists()) return;
     // Refused while the vote is still open for this round: the expiry bound (a phone more than 7 days slow).
     const now = await getRoom(db, code);
     if (now.phase === 'voting' && now.round === round) throw new Error('Bad clock');
@@ -228,7 +263,7 @@ export async function castVote(db, code, uid, target) {
 }
 
 export async function closeVoting(db, code, rand = Math.random) {
-  await runTransaction(db, async (tx) => {
+  await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     if (room.phase !== 'voting') return;
     const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
@@ -257,7 +292,7 @@ export async function closeVoting(db, code, rand = Math.random) {
 
 // Game master only: voiding a round needs the secret and a room update.
 export async function removePlayer(db, code, uid) {
-  await runTransaction(db, async (tx) => {
+  await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
     const playing = room.active.includes(uid) && room.phase !== 'lobby' && room.phase !== 'gameOver';
@@ -289,10 +324,13 @@ export async function handOverGm(db, code, newGmUid) {
   batch.update(roomRef(db, code), { gmUid: newGmUid, gmName: next.data().name, ...roomTtl() });
   batch.delete(sub(db, code, 'players', newGmUid));
   batch.set(sub(db, code, 'players', room.gmUid), { name: room.gmName, joinedAt: serverTimestamp(), ...recordTtl() });
-  await batch.commit();
+  batch.set(lockRef(db, code), lockTtl());
+  await asGm(() => batch.commit());
 }
 
-// Game master only. The rules cannot see the player list, so the check is here: a room with players
+// Game master only. The rules cannot see the player list, so the check is here, and a read followed by a delete
+// cannot be made atomic under these rules: worst case, a player joins in the gap and finds the room gone.
+// The lock record stays, so the code cannot be re-created while leftovers can exist. The check is here: a room with players
 // (or a game in progress) is left alone. Returns whether the room was deleted.
 export async function deleteRoom(db, code) {
   const room = await getDoc(roomRef(db, code));

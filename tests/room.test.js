@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { deleteApp } from 'firebase/app';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { starterChoices } from '../src/game.js';
 import { initFirebase, signIn } from '../src/firebase.js';
 import {
@@ -577,7 +577,7 @@ describe('room data layer', () => {
     await joinRoom(u.p1.db, code, u.p1.uid, 'PLAYER1');
   });
 
-  it('a player sees their own vote, after reload too; a second vote is blocked', async () => {
+  it('a player sees their own vote, after reload too; a second vote changes nothing', async () => {
     const code = await lobby(4);
     const { secret, room } = await deal(code);
     await pickStarter(u.gm.db, code, firstStarter(room, secret.spyUid));
@@ -586,7 +586,8 @@ describe('room data layer', () => {
     expect((await state('p1', code, (s) => s.myVote !== undefined)).myVote).toBeNull();
     await castVote(u.p1.db, code, u.p1.uid, target);
     expect((await state('p1', code, (s) => s.myVote)).myVote).toBe(target);
-    await expect(castVote(u.p1.db, code, u.p1.uid, secret.spyUid)).rejects.toThrow();
+    await castVote(u.p1.db, code, u.p1.uid, secret.spyUid); // already in: not an error, not replaced
+    expect((await state('p1', code, (s) => s.myVote)).myVote).toBe(target);
   });
 
   it('the game master counts only the current round votes', async () => {
@@ -774,5 +775,48 @@ describe('room cleanup', () => {
       vi.spyOn(Date, 'now').mockReturnValue(real - 9 * DAY);
       await expect(castVote(u.p1.db, code, u.p1.uid, u.p2.uid)).rejects.toThrow('Bad clock');
     } finally { spy.mockRestore(); }
+  });
+
+  it('closeVoting\'s final-round branch moves expiresAt', async () => {
+    const code = await lobby(4);
+    await deal(code);
+    const { room, secret } = await clues(code);
+    await pickStarter(u.gm.db, code, firstStarter(room, secret.spyUid));
+    await openVoting(u.gm.db, code);
+    await asAdmin((d) => d.doc(`rooms/${code}`).update({ final: true }));
+    const out = hero(room, secret);
+    for (const id of room.active) await castVote(u[idOf(id)].db, code, id, id === out ? room.active.find((x) => x !== id) : out);
+    await moves(code, () => closeVoting(u.gm.db, code));
+    expect((await rawRoom(code)).phase).toBe('gameOver');
+  });
+
+  it('gm/lock: exists after createRoom, about 40 days ahead, and moves on a game master action', async () => {
+    const code = await lobby(4);
+    const first = (await read(code, ['gm', 'lock'])).expiresAt;
+    expect(near(first, 40 * DAY)).toBe(true);
+    await sleep(15);
+    await deal(code);
+    expect((await read(code, ['gm', 'lock'])).expiresAt.toMillis()).toBeGreaterThan(first.toMillis());
+  });
+
+  it('after deleteRoom the code cannot be created again, but createRoom still succeeds with another code', async () => {
+    const code = await createRoom(u.gm.db, u.gm.uid, 'Gina');
+    expect(await deleteRoom(u.gm.db, code)).toBe(true);
+    await asAdmin(async (d) => expect((await d.doc(`rooms/${code}/gm/lock`).get()).exists).toBe(true));
+    await expect(setDoc(doc(u.gm.db, 'rooms', code), { gmUid: u.gm.uid, expiresAt: Timestamp.fromMillis(Date.now() + DAY) })).rejects.toThrow();
+    expect(await rawRoom(code, 'gm')).toBeUndefined();
+    const other = await createRoom(u.gm.db, u.gm.uid, 'Gina');
+    expect(other).not.toBe(code);
+  });
+
+  it('a game master whose clock is 2 days slow is refused with Bad clock and nothing changes', async () => {
+    const code = await lobby(4);
+    const before = await rawRoom(code);
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 2 * DAY);
+    try {
+      await expect(dealWords(u.gm.db, code, 'cat', 'dog')).rejects.toThrow('Bad clock');
+      await expect(createRoom(u.gm.db, u.gm.uid, 'Gina')).rejects.toThrow('Bad clock');
+    } finally { spy.mockRestore(); }
+    expect(await rawRoom(code)).toEqual(before);
   });
 });
