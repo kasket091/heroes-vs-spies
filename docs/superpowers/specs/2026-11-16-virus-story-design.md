@@ -119,7 +119,7 @@ Other cases:
 ## Testing
 
 - Unit tests for the three pure rules, including both ranking tables line by line, level points, and the early ending.
-- Emulator tests: a whole game where every round has a different carrier and a new pair; the carrier never repeats back to back; points appear only in results; the public record never identifies the current carrier during a round; a tie; a cancelled round; the final both ways; the early ending; double steps (two host tabs, a reload) never score twice.
+- Emulator tests: a whole game where every round has a different carrier and a new pair; the carrier may be the same player two rounds running and nothing public differs when it is; points appear only in results; the public record never identifies the current carrier during a round; a tie; a cancelled round; the final both ways; the early ending; double steps (two host tabs, a reload) never score twice.
 - The existing secrecy tests still pass: the carrier's and a Hero's screens are equal during a round, the host's and a player's too.
 - A browser game, then Dave on phones at the preview address before anything goes live.
 
