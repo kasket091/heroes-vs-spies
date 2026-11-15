@@ -52,7 +52,7 @@ A brand-new room with no players yet is not empty in this sense; it only becomes
 ## How it works (Claude's calls unless marked)
 
 - **"Delete after" time on the room:** set to 24 hours ahead when the room is created and on every action the game master's phone writes: starting a game, dealing words, picking the first speaker, opening or closing voting, next round, removing a player, handing over. A game in play refreshes it every few minutes, so a running game cannot expire.
-- **Records under a room** (players, each player's word, the game master's secret, votes): each gets its own "delete after" time of 7 days from when it is written. Seven days, not 24 hours, so a room in use across several days never loses its player list while it is alive. Leftovers from a deleted room are unreachable from the game and disappear within a week.
+- **Records under a room** (players, each player's word, the game master's secret, votes): each gets its own "delete after" time of 7 days from when it is written. Seven days, not 24 hours, so a room in use across several days never loses its player list while it is alive. Leftovers from a deleted room disappear by themselves; until then the room's code is locked (see "Corrections after review").
 - **Rule 1:** when the game master taps "Leave room" and the player list is empty, the app deletes the room and the game master's secret. With players present, "Leave room" behaves as today: the room stays.
 - **Access rules:** the room's game master may delete that room. Nothing else changes.
 - **Rooms that exist today** have no "delete after" time, so the timed cleanup will never touch them. See the first-run step.
@@ -71,3 +71,11 @@ A brand-new room with no players yet is not empty in this sense; it only becomes
 
 - Field name and how the expiry is declared in the Firebase config.
 - Wording on the "Leave room" line when leaving will delete the room.
+
+## Corrections after review (2026-11-15)
+
+The task review found three faults in this design. Each fix is Claude's call, made to keep the goals above; none changes how the game plays.
+
+- **Leftovers are not unreachable.** Deleting a room frees its code, and whoever creates a room under that code again would become game master over the old room's leftover votes, words and player records. Fix: every room has a lock record that lasts 40 days after the room's last activity, longer than any leftover can live. While the lock exists the access rules refuse to create a room under that code, and the app picks another code. Leaving an empty room deletes the room but keeps the lock.
+- **Updating the live game.** Phones that still have the previous page open do not send a "delete after" time. The access rules therefore accept it when present and do not require it. The rules are deployed before the new page.
+- **The game master's phone clock.** The room's "delete after" time comes from the game master's phone. The rules refuse a time that is not in the future, and the game master is told their phone's date looks wrong. Players' records accept a time up to 30 days ahead (not 8), so a phone up to a week slow or three weeks fast still works; a leftover can therefore linger up to 30 days.
