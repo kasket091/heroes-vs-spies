@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "emulators",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "PATH=\"$PWD/.tools/jre/bin:$PATH\" npx firebase emulators:start --only auth,firestore --project demo-spy"],
+      "port": 8080
+    },
+    {
+      "name": "dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
+    }
+  ]
+}
