@@ -117,7 +117,7 @@ function gameOver(data) {
   // points > 0 only when a final vote wrote this result; endGame keeps an older outName with 0 points.
   const out = r.outName && r.points > 0 ? esc(r.outName) : null;
   return `<section class="result"><h1>${head}</h1>${scoreLine(room.score)}
-    ${out ? `<p class="verdict"><b>${out}</b> was voted out. ${out} ${r.wasSpy ? 'was the spy!' : 'was not the spy.'}</p>` : ''}
+    ${out ? `<p class="verdict"><b>${out}</b> was voted out and ${r.wasSpy ? 'was the spy!' : 'was not the spy.'}</p>` : ''}
     ${r.spyName ? `<p class="verdict">The last spy was <b>${esc(r.spyName)}</b> ${spyTag}</p>` : ''}
     ${r.common ? wordsList(r) : ''}
     <h2>Heroes team${won('heroes')}</h2>${nameList(data, t.heroes, 'Nobody')}
@@ -202,7 +202,7 @@ const screens = {
   pickStarter: ({ data, ui }) => {
     const { secret, room } = data;
     if (!secret) return dealing;
-    const choices = starterChoices(room.roundPlayers, secret.spyUid);
+    const choices = starterChoices(room.roundPlayers, secret.spyUid, room.setStart);
     const rows = room.roundPlayers.map((id) => `<li>${choices.includes(id)
       ? btn(esc(nameOf(data, id)), 'pickStarter', { arg: id, kind: 'choice', disabled: ui.busy })
       : `<span class="unsafe">${esc(nameOf(data, id))}</span>${id === secret.spyUid ? spyTag : '<span class="note">too close to the spy</span>'}`}</li>`).join('');

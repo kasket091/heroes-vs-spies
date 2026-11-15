@@ -39,10 +39,11 @@ test('newRoomCode is 4 allowed letters', () => {
   expect(newRoomCode()).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/);
 });
 
-test('starterChoices: the 2-before rule applies from 5 players', () => {
-  expect(starterChoices(['a', 'b', 'c', 'd', 'e'], 'c')).toEqual(['a', 'd', 'e']);
-  expect(starterChoices(['a', 'b', 'c', 'd'], 'a')).toEqual(['a', 'b', 'c', 'd']);
-  expect(starterChoices(['a', 'b', 'c'], 'c')).toEqual(['a', 'b', 'c']);
+test('starterChoices: the 2-before rule applies only in the first round of a word set, from 5 players', () => {
+  expect(starterChoices(['a', 'b', 'c', 'd', 'e'], 'c', true)).toEqual(['a', 'd', 'e']);
+  expect(starterChoices(['a', 'b', 'c', 'd', 'e'], 'c', false)).toEqual(['a', 'b', 'c', 'd', 'e']);
+  expect(starterChoices(['a', 'b', 'c', 'd'], 'a', true)).toEqual(['a', 'b', 'c', 'd']);
+  expect(starterChoices(['a', 'b', 'c'], 'c', true)).toEqual(['a', 'b', 'c']);
 });
 test('whoIsOut: clear winner', () => {
   expect(whoIsOut({ a: 'c', b: 'c', d: 'a' }, ['a', 'b', 'c', 'd'], () => 0)).toBe('c');

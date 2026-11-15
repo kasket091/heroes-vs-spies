@@ -42,7 +42,7 @@ const deal = async (code, ...rest) => {
   await dealWords(u.gm.db, code, 'cat', 'dog', ...rest);
   return clues(code);
 };
-const firstStarter = (room, spyUid) => starterChoices(room.roundPlayers, spyUid)[0];
+const firstStarter = (room, spyUid) => starterChoices(room.roundPlayers, spyUid, room.setStart)[0];
 // From clues: pick a starter, open voting, everyone but outUid votes for outUid, close. Returns the secret.
 const playRound = async (code, outUid, votersOnly) => {
   const { secret, room } = await clues(code);
@@ -56,7 +56,7 @@ const playRound = async (code, outUid, votersOnly) => {
 };
 const afterClose = (code, round) => state('gm', code, (s) => s.room?.round === round && ['result', 'gameOver'].includes(s.room.phase));
 const hero = (room, secret) => room.active.find((x) => x !== secret.spyUid);
-const ROOM_KEYS = ['gmUid', 'gmName', 'round', 'roundPlayers', 'starterUid', 'result', 'phase', 'active', 'names', 'heroBench', 'spyBench', 'score', 'wordSet', 'needsWords', 'final', 'winner'];
+const ROOM_KEYS = ['gmUid', 'gmName', 'round', 'roundPlayers', 'starterUid', 'result', 'phase', 'active', 'names', 'heroBench', 'spyBench', 'score', 'wordSet', 'needsWords', 'final', 'winner', 'setStart'];
 // What a player can read on the room doc must not name the spy or either word.
 const expectNoSecrets = async (code) => {
   const room = await rawRoom(code);
@@ -84,6 +84,16 @@ describe('room data layer', () => {
     await setDoc(doc(u.gm.db, 'rooms', code), { gmUid: u.gm.uid, gmName: 'Gina', phase: 'lobby', round: 0, roundPlayers: [], starterUid: null, result: null });
     await expect(joinRoom(u.p1.db, code, u.p1.uid, 'Ann')).rejects.toThrow('Old room');
     expect((await getDoc(doc(u.p1.db, 'rooms', code, 'players', u.p1.uid))).exists()).toBe(false);
+  });
+
+  it('joinRoom refuses a name from the running game for a different uid; the same uid may rejoin with it', async () => {
+    const code = await lobby(4);
+    const { room } = await deal(code);
+    await removePlayer(u.gm.db, code, u.p1.uid);
+    await state('gm', code, (s) => s.room?.phase === 'result');
+    expect(room.names[u.p1.uid]).toBe('Player1');
+    await expect(joinRoom(u.p5.db, code, u.p5.uid, 'player1')).rejects.toThrow('Name already taken');
+    await joinRoom(u.p1.db, code, u.p1.uid, 'Player1');
   });
 
   it("joinRoom with '   ' rejects with Name needed", async () => {
@@ -297,6 +307,28 @@ describe('room data layer', () => {
     const code = await lobby(5);
     const { secret } = await deal(code);
     await expect(pickStarter(u.gm.db, code, secret.spyUid)).rejects.toThrow('Not a safe starter');
+  });
+
+  it('starter rule only in the first round of a word set: later rounds accept the spy, a new deal applies it again', async () => {
+    const code = await lobby(6);
+    const { secret, room } = await deal(code);
+    expect(room.setStart).toBe(true);
+    await playRound(code, hero(room, secret));
+    await afterClose(code, room.round);
+    await nextRound(u.gm.db, code);
+    const { room: r2 } = await state('gm', code, (s) => s.room?.phase === 'clues' && s.room.round === room.round + 1);
+    expect(r2.active).toHaveLength(5);
+    expect(r2.setStart).toBe(false);
+    await pickStarter(u.gm.db, code, secret.spyUid);
+    expect((await rawRoom(code)).starterUid).toBe(secret.spyUid);
+    // Catch the spy, deal again: the flag is back on for the new word set.
+    await openVoting(u.gm.db, code);
+    for (const id of r2.active) await castVote(u[idOf(id)].db, code, id, id === secret.spyUid ? r2.active.find((x) => x !== id) : secret.spyUid);
+    await closeVoting(u.gm.db, code);
+    await afterClose(code, r2.round);
+    await dealWords(u.gm.db, code, 'sun', 'moon');
+    const { room: r3 } = await state('gm', code, (s) => s.room?.phase === 'clues' && s.room.wordSet === room.wordSet + 1);
+    expect(r3.setStart).toBe(true);
   });
 
   it('pickStarter in lobby rejects with No round to start', async () => {

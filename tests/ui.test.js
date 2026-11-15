@@ -8,7 +8,7 @@ const players = ids.map((uid) => ({ uid, name: NAMES[uid] }));
 const room = (over = {}) => ({
   gmUid: 'gm', gmName: 'Gina', phase: 'lobby', round: 7, roundPlayers: [], starterUid: null, result: null,
   active: [], names: {}, heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 },
-  wordSet: 1, needsWords: false, final: false, winner: null, ...over,
+  wordSet: 1, needsWords: false, final: false, winner: null, setStart: false, ...over,
 });
 const st = (uid, roomOver, extra = {}, ui = {}) => ({
   uid, code: 'ABCD', ui: { fields: {}, ...ui },
@@ -55,13 +55,20 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(screenFor(st('gm', game({ phase: 'result', result: notSpy }), {}, { view: 'words' }))).toBe('gmResult');
   });
   it('game master, clues without a starter: pickStarter, starterChoices decides what is tappable', () => {
-    const five = st('gm', game({ active: ['a', 'b', 'c', 'd', 'e'], roundPlayers: ['a', 'b', 'c', 'd', 'e'], heroBench: [], starterUid: null }), { secret });
+    const five = st('gm', game({ active: ['a', 'b', 'c', 'd', 'e'], roundPlayers: ['a', 'b', 'c', 'd', 'e'], heroBench: [], starterUid: null, setStart: true }), { secret });
     expect(screenFor(five)).toBe('pickStarter');
     const html5 = view(five);
     expect(html5).toContain('too close to the spy');
     expect(html5.match(/data-action="pickStarter"/g).length).toBe(3);
+    expect(html5).toContain('The spy will speak third or later.');
+    // A later round of the same word set: anyone, the spy included.
+    const later = view(st('gm', { ...five.data.room, setStart: false }, { secret }));
+    expect(later).not.toContain('too close to the spy');
+    expect(later.match(/data-action="pickStarter"/g).length).toBe(5);
+    expect(later).toContain('Anyone can go first.');
+    expect(later).not.toContain('third or later');
     for (const n of [4, 3]) {
-      const s = st('gm', game({ active: ids.slice(0, n), roundPlayers: ids.slice(0, n), starterUid: null }), { secret });
+      const s = st('gm', game({ active: ids.slice(0, n), roundPlayers: ids.slice(0, n), starterUid: null, setStart: true }), { secret });
       const html = view(s);
       expect(html).not.toContain('too close to the spy');
       expect(html.match(/data-action="pickStarter"/g).length).toBe(n);
@@ -131,8 +138,8 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(html.slice(html.indexOf('Spies team'))).toContain('Fay');
     expect(view(st('a', { ...over, winner: 'draw', score: { heroes: 2, spies: 2 } }))).toContain("It's a draw");
     // One line on who went out in the final; nothing when the game ended without a final vote.
-    expect(html).toMatch(/Ben<\/b> was voted out\. Ben was not the spy\./);
-    expect(view(st('a', { ...over, result: { ...caught, points: 8 } }))).toMatch(/Cara<\/b> was voted out\. Cara was the spy!/);
+    expect(html).toMatch(/Ben<\/b> was voted out and was not the spy\./);
+    expect(view(st('a', { ...over, result: { ...caught, points: 8 } }))).toMatch(/Cara<\/b> was voted out and was the spy!/);
     expect(view(st('a', { ...over, result: { ...notSpy, points: 0 } }))).not.toContain('was voted out');
     const unknown = view(st('a', { ...over, result: { ...notSpy } }));
     expect(unknown).not.toContain('Cola');

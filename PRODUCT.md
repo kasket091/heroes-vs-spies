@@ -20,7 +20,7 @@ A spy word party game, played as Heroes vs Spies. Everyone gets the same secret 
 
 ## Positioning
 
-The game master is a person in the room who sees everything: both words and who the spy is. They approve or skip each word pair before it reaches the players and pick who speaks first, and with 5 or more players still in, the app guarantees at least 2 people speak before the spy.
+The game master is a person in the room who sees everything: both words and who the spy is. They approve or skip each word pair before it reaches the players and pick who speaks first, and in the first round after words are dealt, with 5 or more players still in, the app guarantees at least 2 people speak before the spy.
 
 ## Operating Context
 
@@ -35,7 +35,7 @@ The game master is a person in the room who sees everything: both words and who 
 - Phases: lobby, clues, voting, result, gameOver.
 - A player's screen must never show or hint who the spy is while that spy is still in the game; all player screens look identical apart from the word. A "not the spy" result shows no words and no spy, and the Spy bench lists only spies already caught.
 - One vote per round benches one player. A tie (or no votes) draws one of the tied players at random, the spy included, and the result does not mention the tie.
-- With 5 or more players still in, the spy speaks third or later; with 4 or 3, anyone may start.
+- In the first round of a word set, with 5 or more players still in, the spy speaks third or later. In later rounds of the same word set, and with 4 or 3 players, anyone may start, the spy included.
 - Final battle at 3 players: one vote worth the score gap plus 1, so its winner wins the game. Fewer than 3 left (after removals) ends the game on the current score; a level score is a draw.
 - Benched players see only the scoreboard and are not dealt words. Late joiners wait for the next game. Scores start at 0–0 each game.
 - 70 built-in word pairs in `words/word-pairs.json`; the game master can type their own.

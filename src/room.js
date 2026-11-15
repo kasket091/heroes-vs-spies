@@ -27,7 +27,7 @@ export async function createRoom(db, uid, rawName) {
       tx.set(roomRef(db, code), {
         gmUid: uid, gmName, phase: 'lobby', round: 0, roundPlayers: [], starterUid: null, result: null,
         active: [], names: {}, heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 },
-        wordSet: 0, needsWords: false, final: false, winner: null,
+        wordSet: 0, needsWords: false, final: false, winner: null, setStart: false,
       });
       return true;
     });
@@ -41,6 +41,10 @@ export async function joinRoom(db, code, uid, rawName) {
   const room = await getRoom(db, code);
   // A room made by the version before Heroes vs Spies: refuse before writing anything.
   if (!Array.isArray(room.active)) throw new Error('Old room');
+  const same = (n) => n.toLowerCase() === name.toLowerCase();
+  // While a game runs, its names (benched and removed players too) stay reserved for their own uid.
+  const running = room.phase !== 'lobby' && room.phase !== 'gameOver';
+  if (running && Object.entries(room.names).some(([id, n]) => id !== uid && same(n))) throw new Error('Name already taken');
   // The game master already has their own screen; a player doc would put them in the deal.
   if (room.gmUid === uid) return;
   const taken = (await getDocs(playersQuery(db, code))).docs.some((d) => d.id !== uid && d.data().name.toLowerCase() === name.toLowerCase());
@@ -154,7 +158,7 @@ export async function dealWords(db, code, common, spy, rand = Math.random) {
     // round keeps counting across games: vote ids are round_uid and the rules never let a vote be replaced.
     tx.update(roomRef(db, code), {
       phase: 'clues', wordSet, round: room.round + 1, roundPlayers: [...active], starterUid: null, result: null,
-      final: stage(active.length) === 'final', needsWords: false,
+      final: stage(active.length) === 'final', needsWords: false, setStart: true,
       ...(fresh && {
         active, names: Object.fromEntries(players.map((p) => [p.id, p.name])),
         heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 }, winner: null,
@@ -174,7 +178,7 @@ export async function nextRound(db, code) {
     if (room.needsWords) return;
     tx.update(roomRef(db, code), {
       round: room.round + 1, roundPlayers: [...room.active], starterUid: null, result: null,
-      final: stage(room.active.length) === 'final', phase: 'clues',
+      final: stage(room.active.length) === 'final', phase: 'clues', setStart: false,
     });
   });
 }
@@ -184,7 +188,7 @@ export async function pickStarter(db, code, starterUid) {
     const room = await readRoom(tx, db, code);
     const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
     if (room.phase !== 'clues' || secret?.wordSet !== room.wordSet) throw new Error('No round to start');
-    if (!starterChoices(room.roundPlayers, secret.spyUid).includes(starterUid)) throw new Error('Not a safe starter');
+    if (!starterChoices(room.roundPlayers, secret.spyUid, room.setStart).includes(starterUid)) throw new Error('Not a safe starter');
     tx.update(roomRef(db, code), { roundPlayers: speakingOrder(room.roundPlayers, starterUid), starterUid });
   });
 }

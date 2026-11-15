@@ -156,7 +156,7 @@ None beyond the cover band. Each screen shows one thing; the game state decides 
 - Scoreboard: an h2 "Score" and the score line, then one ruled label-and-names row each for Hero bench, Spy bench and Still in (the same row pattern as the word pairs, names in regular weight, comma-separated). Still in is left out where a speaking order already lists the players. The Spy bench lists only caught spies.
 
 ### Final battle note
-A white box with a 2px cobalt outline and the words "Final battle, worth N points" in bold cobalt. Shown during the final round only, identical for every player.
+A white box with a 2px cobalt outline and the words "Final battle, worth N point" or "points" in bold cobalt. Shown during the final round only, identical for every player.
 
 ### Spy tag
 An outlined red uppercase "SPY" word next to a name. Shown only on the game master's screens and in results.

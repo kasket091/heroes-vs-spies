@@ -32,8 +32,9 @@ export function cleanName(raw) {
   return raw.slice(0, 20).trim() || null;
 }
 
-export const starterChoices = (activeIds, spyId) =>
-  activeIds.length >= 5 ? safeStarters(activeIds, spyId) : [...activeIds];
+// Only the first round of a word set protects the spy: repeated every round it would clear two more players each time.
+export const starterChoices = (activeIds, spyId, firstRound) =>
+  firstRound && activeIds.length >= 5 ? safeStarters(activeIds, spyId) : [...activeIds];
 
 // Most votes goes out; a tie (or no votes) draws among the tied, in activeIds order.
 export function whoIsOut(votes, activeIds, rand = Math.random) {
