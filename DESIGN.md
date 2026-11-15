@@ -107,7 +107,7 @@ The signature move is the player's word written on a copybook three-line guide (
 - **Cobalt** (`cobalt`): the pad cover band and every primary button. White text on it.
 
 ### Neutral
-- **Paper** (`paper`) is the page ground; **Paper deep** (`paper-deep`) is the one second layer (the game master's "Keep this screen open" strip, secondary-button hover).
+- **Paper** (`paper`) is the page ground; **Paper deep** (`paper-deep`) is the one second layer (the host's "Your phone runs this room" strip, the "Waiting for <host>'s phone" note, secondary-button hover).
 - **Ink** and **Ink soft** carry all text. Ink soft is for labels, hints and numbers in lists, never below 4.5:1 on paper.
 - **Rule** and **Rule strong** draw the writing lines. They are decoration only and carry no meaning.
 
@@ -141,8 +141,9 @@ Small 0.4rem corners on buttons, fields, tags and the error box. Everything else
 - Primary: solid cobalt, white bold label, full width, 48px tall.
 - Secondary: transparent with a 2px ink outline, full width.
 - Choice: a whole ruled line you can tap (a name to pick or vote for): paper fill, cobalt text, rule-strong outline; fills cobalt on press, and on hover only on devices with a real pointer (`@media (hover: hover)`), because :hover sticks after a tap on phones.
-- Small: the per-row actions (Remove, Make game master), at least 44px tall.
-- Danger: solid red, only for confirming a removal that ends the round.
+- Small: the per-row actions (Remove) and the Yes/Keep, Yes/Stay pairs, at least 44px tall.
+- Danger: solid red, only for confirming a removal that ends the round or leaving mid-game.
+- Link: Leave room, low emphasis, on every screen of a player other than the host. Mid-game it is replaced in place by the question "You're in a game. Leaving can hold it up for the others." with Yes, leave and Stay.
 - Disabled: 45% opacity with the reason written beside it.
 
 ### Inputs / Fields
@@ -153,19 +154,20 @@ None beyond the cover band. Each screen shows one thing; the game state decides 
 
 ### Score line and scoreboard
 - Score line: "Heroes **N** · Spies **N**" in tabular numerals, the same on every phone (the spy's too). The numbers are 1.5rem on round screens and 2rem on the scoreboard and at game over, where the score is the point of the screen.
-- Scoreboard: an h2 "Score" and the score line, then one ruled label-and-names row each for Hero bench, Spy bench and Still in (the same row pattern as the word pairs, names in regular weight, comma-separated). Still in is left out where a speaking order already lists the players. The Spy bench lists only caught spies.
+- Scoreboard: an h2 "Score" and the score line, then one ruled label-and-names row each for Hero bench, Spy bench and Still in (the same row pattern as the word pairs, names in regular weight, comma-separated). The Spy bench lists only caught spies.
 
 ### Final battle note
 A white box with a 2px cobalt outline and the words "Final battle, worth N point" or "points" in bold cobalt. Shown during the final round only, identical for every player.
 
 ### Spy tag
-An outlined red uppercase "SPY" word next to a name. Shown only on the game master's screens and in results.
+An outlined red uppercase "SPY" word next to a name. Shown only in results that reveal the spy and at game over.
 
 ## Do's and Don'ts
 
 ### Do:
 - Put one thing per screen and let the big word or the big code lead.
-- Write every state in words: "Vote sent", "3 of 5 voted", "too close to the spy", struck names for unsafe starters.
+- Write every state in words: "Vote sent", "Waiting for: Ann, Ben", "Next round starts in a moment."
+- Give the host the same screens as everyone else, plus only the keep-open strip and a collapsed "Remove a player".
 - Keep player screens identical for the spy and everyone else: only the word text may differ.
 
 ### Don't:

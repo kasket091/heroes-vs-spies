@@ -73,7 +73,7 @@ p { margin: 0 0 0.75rem; max-width: 65ch; }
 b { font-weight: 700; }
 i { font-style: normal; color: var(--ink-soft); }
 
-.hint, .note, .or { color: var(--ink-soft); }
+.hint, .or { color: var(--ink-soft); }
 .hint { font-size: 1rem; margin-top: 0.5rem; }
 .status { color: var(--ink-soft); font-size: 1.25rem; padding: 2rem 0; }
 
@@ -121,8 +121,6 @@ i { font-style: normal; color: var(--ink-soft); }
   line-height: 1.6;
   vertical-align: 0.15em;
 }
-.unsafe { color: var(--ink-soft); text-decoration: line-through; text-decoration-thickness: 2px; }
-.note { font-size: 0.9375rem; margin-left: auto; }
 
 /* Buttons */
 .btn {
@@ -205,7 +203,7 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
   color: var(--red);
 }
 
-/* Game master */
+/* The host's phone runs the room: one strip on top of the page */
 .keep {
   margin: -1.25rem -1rem 1rem -2rem;
   padding: 0.625rem 1rem 0.625rem 2rem;
@@ -223,7 +221,6 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
   line-height: 1.2;
   border-bottom: 2px solid var(--rule-strong);
 }
-.count { font-size: 1.5rem; margin-top: 0.5rem; font-variant-numeric: tabular-nums; }
 .result { margin-bottom: 2.5rem; }
 .verdict { font-size: 1.25rem; }
 .manage { margin-top: 2.5rem; }
@@ -250,6 +247,16 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
 }
 .manage[open] summary::before { transform: rotate(45deg); }
 .confirm > span:first-child { font-weight: 700; }
+/* Leaving mid-game asks first, in place of the Leave link */
+.ask { margin-top: 1.5rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); }
+/* Another phone is holding the game up: written on the second layer, never coloured alone */
+.stall {
+  margin: 0.75rem 0 1rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--paper-deep);
+  border-radius: var(--radius);
+  font-weight: 700;
+}
 
 /* Score: the same line on every phone, the spy's included */
 .score-line { margin: 1.5rem 0 0.75rem; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
