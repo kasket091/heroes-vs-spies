@@ -41,6 +41,37 @@ export function tally(votes, spyId) {
   return { votedOutUid: top[0], tie: false, winner: top[0] === spyId ? 'players' : 'spy' };
 }
 
+export const starterChoices = (activeIds, spyId) =>
+  activeIds.length >= 5 ? safeStarters(activeIds, spyId) : [...activeIds];
+
+// Most votes goes out; a tie (or no votes) draws among the tied, in activeIds order.
+export function whoIsOut(votes, activeIds, rand = Math.random) {
+  const counts = Object.fromEntries(activeIds.map((id) => [id, 0]));
+  for (const target of Object.values(votes)) if (target in counts) counts[target]++;
+  const max = Math.max(...Object.values(counts));
+  return pick(activeIds.filter((id) => counts[id] === max), rand);
+}
+
+export const finalPoints = ({ heroes, spies }) => Math.abs(heroes - spies) + 1;
+
+export function scoreRound({ outUid, spyUid, score, final }) {
+  const wasSpy = outUid === spyUid;
+  const team = wasSpy ? 'heroes' : 'spies';
+  const points = final ? finalPoints(score) : 1;
+  return { wasSpy, team, points, score: { ...score, [team]: score[team] + points } };
+}
+
+export const stage = (activeCount) => (activeCount > 3 ? 'round' : activeCount === 3 ? 'final' : 'over');
+
+export const gameWinner = ({ heroes, spies }) => (heroes > spies ? 'heroes' : spies > heroes ? 'spies' : 'draw');
+
+export function teams({ active, heroBench, spyBench, spyUid }) {
+  return {
+    heroes: [...active.filter((id) => id !== spyUid), ...heroBench],
+    spies: [...active.filter((id) => id === spyUid), ...spyBench],
+  };
+}
+
 const CODE_LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 
 export function newRoomCode(rand = Math.random) {
