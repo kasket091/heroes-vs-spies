@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "firebase emulators:exec --only auth,firestore --project demo-spy \"vitest run\"",
+    "test": "PATH=\"$PWD/.tools/jre/bin:$PATH\" firebase emulators:exec --only auth,firestore --project demo-spy \"vitest run\"",
     "test:unit": "vitest run tests/game.test.js"
   },
   "keywords": [],
