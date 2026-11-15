@@ -61,7 +61,8 @@ const update = () => {
   render(root, s, actions);
   // The stalled line depends on time: look again each second while it could appear.
   const room = s.data?.room;
-  const couldStall = room && (room.phase === 'result' || (room.phase === 'voting' && s.data.waiting?.length === 0));
+  // Never on the host's phone: the host does not see the stalled line.
+  const couldStall = room && room.gmUid !== s.uid && (room.phase === 'result' || (room.phase === 'voting' && s.data.waiting?.length === 0));
   if (couldStall && !tick) tick = setTimeout(() => { tick = null; update(); }, 1000);
 };
 
@@ -85,6 +86,7 @@ function openRoom(code) {
   params.set('room', code);
   history.replaceState(null, '', `?${params}`);
   stopRoom();
+  seenKey = null;
   s.data = undefined;
   unsubscribe = api.subscribe(db, code, s.uid, (data) => {
     // A remembered room that is gone, or no longer has this person in it: back to the join form.
@@ -99,11 +101,14 @@ function openRoom(code) {
     s.data = data;
     if (touched !== code && data.players.some((p) => p.uid === s.uid)) { touched = code; api.touchPlayer(db, code, s.uid); }
     // The host's phone runs the room in the background; a hand-over moves that to the new host's phone.
-    const host = data.room?.gmUid === s.uid;
+    // Not for a room from the older version (no seats).
+    const host = data.room?.gmUid === s.uid && Array.isArray(data.room.seats);
     if (host && !stopRunner) {
-      stopRunner = api.runRoom(db, code, s.uid, families, {
-        onError: (e) => { s.ui.runError = e && friendly(e); update(); },
+      const stop = api.runRoom(db, code, s.uid, families, {
+        // A step that fails after this runner was stopped or replaced must not leave a stale Problem line.
+        onError: (e) => { if (stopRunner !== stop) return; s.ui.runError = e && friendly(e); update(); },
       });
+      stopRunner = stop;
     } else if (!host && stopRunner) { stopRunner(); stopRunner = null; s.ui.runError = null; }
     const { room } = data;
     const key = room?.phase === 'voting' ? `voting:${room.round}:${data.waiting.length === 0}` : `${room?.phase}:${room?.round}`;
@@ -125,6 +130,8 @@ const voting = () => s.data?.room?.phase === 'voting';
 
 const actions = {
   setField: (name, value) => { s.ui.fields[name] = value; },
+  // Remembers an open section without re-rendering: the browser already shows it.
+  setOpen: (key, open) => { s.ui[key] = open; },
   create: () => run(async () => openRoom(await api.createRoom(db, s.uid, s.ui.fields.name))),
   join: () => run(async () => {
     const code = s.ui.fields.code.trim().toUpperCase();

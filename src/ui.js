@@ -144,7 +144,7 @@ function removeList({ uid, data, ui }) {
     ? `<li class="confirm"><span>Remove ${esc(p.name)}? This round won't count.</span>
         <span class="row-actions">${btn('Yes, remove', 'remove', { arg: p.uid, kind: 'danger small', disabled: ui.busy })}${btn('Keep', 'cancelRemove', { kind: 'secondary small' })}</span></li>`
     : `<li><span>${esc(p.name)}</span><span class="row-actions">${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy, extra: ` aria-label="Remove ${esc(p.name)}"` })}</span></li>`)).join('');
-  return `<details class="manage"${ui.confirmRemove ? ' open' : ''}><summary>Remove a player</summary><ol class="ruled">${rows}</ol></details>`;
+  return `<details class="manage" data-open="openRemove"${ui.confirmRemove || ui.openRemove ? ' open' : ''}><summary>Remove a player</summary><ol class="ruled">${rows}</ol></details>`;
 }
 
 const keepOpen = '<p class="keep">Your phone runs this room. Keep this screen open.</p>';
@@ -152,21 +152,16 @@ const keepOpen = '<p class="keep">Your phone runs this room. Keep this screen op
 const playerList = ({ uid, data }) => `<h2>Players (${data.players.length})</h2>
     <ol class="ruled numbered">${data.players.map((p) => `<li><span>${esc(p.name)}${you(p.uid === uid)}</span></li>`).join('')}</ol>`;
 
-function voteSection(s) {
-  const { uid, data, ui } = s;
+// What this phone knows about its own vote; shown above the order so it is seen without scrolling.
+function voteStatus(s) {
+  const { data } = s;
   const { room, myVote } = data;
   if (myVote === undefined) return '<p class="status" role="status">Checking your vote…</p>';
-  if (myVote) {
-    // Shown in speaking order, whatever order the list arrived in.
-    const left = room.roundPlayers.filter((id) => data.waiting?.includes(id));
-    return `<h2>Vote sent</h2>
-      <p role="status">${left.length ? `Waiting for: ${left.map((id) => esc(nameOf(data, id))).join(', ')}` : 'Everyone has voted.'}</p>
-      ${stallLine(s)}`;
-  }
-  return `<h2>Who is the spy?</h2>
-    <p>When everyone has said a clue, tap one name. You can only vote once.</p>
-    <ul class="ruled">${room.roundPlayers.filter((id) => id !== uid)
-    .map((id) => `<li>${btn(esc(nameOf(data, id)), 'vote', { arg: id, kind: 'choice', disabled: ui.busy })}</li>`).join('')}</ul>`;
+  if (!myVote) return '';
+  // Shown in speaking order, whatever order the list arrived in.
+  const left = room.roundPlayers.filter((id) => data.waiting?.includes(id));
+  return `<p class="sent" role="status"><b>Vote sent.</b> ${left.length ? `Waiting for: ${left.map((id) => esc(nameOf(data, id))).join(', ')}` : 'Everyone has voted.'}</p>
+    ${stallLine(s)}`;
 }
 
 function nextLine(room) {
@@ -193,8 +188,7 @@ const screens = {
 
   waiting: (s) => `<h1>You're in!</h1>
     <p>Waiting for ${esc(s.data.room.gmName)} to start the game.</p>
-    ${playerList(s)}
-    ${leaveBlock(s)}`,
+    ${playerList(s)}`,
 
   // The host between games: lobby and game over.
   lobby: ({ uid, code, data, ui }) => {
@@ -205,7 +199,7 @@ const screens = {
     const rows = players.map((p) => `<li><span>${esc(p.name)}${you(p.uid === uid)}</span>${p.uid === uid ? '' : `<span class="row-actions">
       ${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy, extra: ` aria-label="Remove ${esc(p.name)}"` })}</span>`}</li>`).join('');
     // Kept apart from Remove so a slip on one row cannot hit the other action.
-    const handOver = others.length ? `<details class="manage"><summary>Hand the room to someone else</summary>
+    const handOver = others.length ? `<details class="manage" data-open="openHandOver"${ui.openHandOver ? ' open' : ''}><summary>Hand the room to someone else</summary>
       <p class="hint">Their phone runs the room from then on, and they get the New game button.</p>
       <ul class="ruled">${others.map((p) => `<li>${btn(`Give the room to ${esc(p.name)}`, 'handOver', { arg: p.uid, kind: 'choice', disabled: ui.busy })}</li>`).join('')}</ul></details>` : '';
     return `${over ? gameOver(data) : ''}
@@ -223,13 +217,17 @@ const screens = {
   // Seated, voting. Nothing here depends on who the spy is: only the word text differs.
   vote: (s) => {
     const { uid, data } = s;
+    // The order and the vote are one list: every other name is a vote button until this phone has voted.
+    const canVote = data.myVote === null;
     return `<h1 class="label">Your word</h1>
     <p class="word">${data.myWord ? esc(data.myWord) : '<span class="status">Getting your word…</span>'}</p>
     ${finalLine(data.room)}
-    <p>Say one clue out loud. Don't say your word!</p>
+    ${voteStatus(s)}
     <h2>Speaking order</h2>
-    <ol class="ruled numbered">${data.room.roundPlayers.map((id) => `<li><span>${esc(nameOf(data, id))}${you(id === uid)}</span></li>`).join('')}</ol>
-    ${voteSection(s)}
+    <p class="hint">Say one clue each, in this order. Don't say your word!${canVote ? ' Then tap who you think is the spy. You can only vote once.' : ''}</p>
+    <ol class="ruled numbered order">${data.room.roundPlayers.map((id) => `<li>${canVote && id !== uid
+    ? btn(esc(nameOf(data, id)), 'vote', { arg: id, kind: 'choice', disabled: s.ui.busy, extra: ` aria-label="Vote for ${esc(nameOf(data, id))}"` })
+    : `<span>${esc(nameOf(data, id))}${you(id === uid)}</span>`}</li>`).join('')}</ol>
     ${errorLine(s.ui.error)}
     ${scoreLine(data.room.score)}`;
   },
@@ -300,6 +298,10 @@ export function render(root, s, actions) {
   }
   for (const b of root.querySelectorAll('[data-action]')) {
     b.addEventListener('click', () => { if (ready()) actions[b.dataset.action](b.dataset.arg); });
+  }
+  // An open section stays open across re-renders (votes arriving re-render the page).
+  for (const d of root.querySelectorAll('details[data-open]')) {
+    d.addEventListener('toggle', () => actions.setOpen(d.dataset.open, d.open));
   }
   for (const f of root.querySelectorAll('[data-submit]')) {
     f.addEventListener('submit', (e) => { e.preventDefault(); if (ready()) actions[f.dataset.submit](); });

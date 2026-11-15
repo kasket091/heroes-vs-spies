@@ -102,15 +102,21 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(has(html, 'leave')).toBe(true);
     expect(view(st('f', game()))).toContain("You're on the Spy bench");
   });
-  it('seated, voting, not voted: word, speaking order, vote buttons for the others, score line', () => {
-    const s = st('a', game(), { myWord: 'Cola' });
+  it('seated, voting, not voted: word, then one list: the speaking order where every other name is a vote button', () => {
+    const s = st('b', game(), { myWord: 'Cola' });
     expect(screenFor(s)).toBe('vote');
     const html = view(s);
     expect(html).toContain('Cola');
     expect(html).toContain('Speaking order');
-    expect(html.indexOf('Speaking order')).toBeLessThan(html.indexOf('data-action="vote"'));
+    expect(html.match(/<ol/g).length).toBe(1);
+    const list = html.slice(html.indexOf('<ol'), html.indexOf('</ol>'));
+    expect([...list.matchAll(/<li>(.*?)<\/li>/g)].map((m) => (m[1].includes('data-action="vote"') ? m[1].match(/data-arg="(\w+)"/)[1] : 'own')))
+      .toEqual(['a', 'own', 'c', 'gm']);
+    expect(list).toContain('Ben <i>(you)</i>');
+    expect(html).toContain('aria-label="Vote for Ann"');
+    expect(html.indexOf('tap who you think is the spy')).toBeLessThan(html.indexOf('<ol'));
     expect(html.match(/data-action="vote"/g).length).toBe(3);
-    expect(html).not.toContain('data-action="vote" data-arg="a"');
+    expect(html).not.toContain('data-action="vote" data-arg="b"');
     expect(html).not.toContain('data-arg="e"');
     expect(html).toContain('Heroes <b>1</b>');
     expect(html).not.toContain('Final battle');
@@ -126,6 +132,8 @@ describe('screenFor: one test per row of the screen table', () => {
     const html = view(s);
     for (const t of ['Cola', 'Speaking order', 'Vote sent', 'Waiting for: Cara, Gina']) expect(html).toContain(t);
     expect(has(html, 'vote')).toBe(false);
+    // Above the order, so it shows without scrolling.
+    expect(html.indexOf('Vote sent')).toBeLessThan(html.indexOf('<ol'));
   });
   it('seated, voting, everyone voted and no result yet: "Everyone has voted."', () => {
     const html = view(st('a', game(), { myWord: 'Cola', myVote: 'b', waiting: [] }));
@@ -203,7 +211,7 @@ describe('screenFor: one test per row of the screen table', () => {
       st('gm', game({ seats: ['a', 'b', 'c'], roundPlayers: ['a', 'b', 'c'], heroBench: ['e', 'gm'] }))]) {
       const html = view(s);
       expect(html).toContain('Your phone runs this room. Keep this screen open.');
-      expect(html).toContain('<details class="manage"><summary>Remove a player</summary>');
+      expect(html).toContain('<details class="manage" data-open="openRemove"><summary>Remove a player</summary>');
     }
     for (const s of [st('gm', {}), st('a', game()), st('e', game())]) {
       expect(view(s)).not.toContain('Keep this screen open');
@@ -245,15 +253,20 @@ describe('secrecy', () => {
   // Host only: the keep-open line and Remove a player. Players only: Leave room (the host hands the room over instead).
   const strip = (html) => html.replace(/<p class="keep">.*?<\/p>/s, '').replace(/<details class="manage".*?<\/details>/s, '')
     .replace(/<button[^>]*data-action="askLeave"[^>]*>Leave room<\/button>/, '');
-  const mask = (html) => strip(html).replace(/ <i>\(you\)<\/i>/g, '').replace(/Gina|Ann|Ben|Cara/g, 'NAME').replace(/data-arg="(gm|a|b|c)"/g, 'data-arg="X"');
+  // The order is one list: the viewer's own row (in their own seat) is the only one that is not a vote button.
+  const rows = (html) => html.replace(/<li><button[^>]*data-action="vote"[^>]*>NAME<\/button><\/li>|<li><span>NAME<\/span><\/li>/g, '<li>ROW</li>');
+  const names = (html) => html.replace(/ <i>\(you\)<\/i>/g, '').replace(/Gina|Ann|Ben|Cara/g, 'NAME').replace(/data-arg="(gm|a|b|c)"/g, 'data-arg="X"');
+  const mask = (html) => rows(names(strip(html)));
+  const votes = (html) => (html.match(/data-action="vote"/g) || []).length;
   it("the host's voting view equals a player's once host-only controls and (you) are masked, host as spy and as hero", () => {
     for (const word of ['Cola', 'Water']) {
       for (const extra of [{ myVote: null }, { myVote: 'b', waiting: ['c'] }, { myVote: 'b' }, { myVote: undefined }]) {
         for (const final of [false, true]) {
           const r = game({ final });
-          const host = mask(view(st('gm', r, { ...extra, myWord: word })));
-          const player = mask(view(st('a', r, { ...extra, myWord: word })));
-          expect(host).toBe(player);
+          const host = view(st('gm', r, { ...extra, myWord: word }));
+          const player = view(st('a', r, { ...extra, myWord: word }));
+          expect(mask(host)).toBe(mask(player));
+          expect(votes(host)).toBe(votes(player));
         }
       }
     }
@@ -285,12 +298,14 @@ describe('secrecy', () => {
     }
   });
   it('the active spy and a hero see the same screen apart from the word and their own seat', () => {
-    const mask2 = (html, word) => html.replace(word, 'WORD').replace(' <i>(you)</i>', '')
-      .replace(/Ann|Ben|Cara/g, 'NAME').replace(/data-arg="[abc]"/g, 'data-arg="X"');
+    const mask2 = (html, word) => rows(names(html.replace(word, 'WORD')));
     for (const final of [false, true]) {
       for (const extra of [{ myVote: null }, { myVote: 'gm', waiting: ['b'] }]) {
         const r = game({ final });
-        expect(mask2(view(st('c', r, { ...extra, myWord: 'Water' })), 'Water')).toBe(mask2(view(st('a', r, { ...extra, myWord: 'Cola' })), 'Cola'));
+        const spy = view(st('c', r, { ...extra, myWord: 'Water' }));
+        const hero = view(st('a', r, { ...extra, myWord: 'Cola' }));
+        expect(mask2(spy, 'Water')).toBe(mask2(hero, 'Cola'));
+        expect(votes(spy)).toBe(votes(hero));
       }
     }
   });
@@ -342,7 +357,7 @@ describe('leave', () => {
 describe('remove', () => {
   it('a seated player mid-vote asks first and keeps the section open', () => {
     const html = view(st('gm', game(), {}, { confirmRemove: 'c' }));
-    expect(html).toContain('<details class="manage" open>');
+    expect(html).toContain('<details class="manage" data-open="openRemove" open>');
     expect(html).toContain("Remove Cara? This round won't count.");
   });
   it('a benched player is removed without the round warning', () => {
@@ -424,6 +439,29 @@ describe('render ignores taps right after the screen changes', () => {
   it('also guards the vote buttons giving way to Vote sent, and the Leave question appearing', () => {
     expect(tapAfter(st('a', game(), { myWord: 'Cola' }), st('a', game(), { myWord: 'Cola', myVote: 'b' }))).not.toHaveBeenCalled();
     expect(tapAfter(st('a', game()), st('a', game(), {}, { confirmLeave: true }))).not.toHaveBeenCalled();
+  });
+});
+
+describe('one Leave control per screen, open sections kept', () => {
+  it('no screen has more than one Leave control', () => {
+    const states = [st('a', {}), st('gm', {}, { players: [{ uid: 'gm', name: 'Gina' }] }), st('a', game(), { myWord: 'Cola' }),
+      st('a', game(), { myVote: 'b' }), st('e', game()), st('d', game()), st('a', inResult()), st('e', inResult()), st('d', inResult()),
+      st('a', game({ phase: 'gameOver', winner: 'draw', result: notSpy })), st('a', game(), {}, { confirmLeave: true })];
+    for (const s of states) expect((view(s).match(/data-action="(leave|askLeave)"/g) || []).length).toBeLessThanOrEqual(1);
+  });
+  it('keeps Remove a player and the hand-over section open when the page says so', () => {
+    expect(view(st('gm', game(), {}, { openRemove: true }))).toContain('<details class="manage" data-open="openRemove" open>');
+    expect(view(st('gm', game()))).toContain('<details class="manage" data-open="openRemove">');
+    expect(view(st('gm', {}, {}, { openHandOver: true }))).toContain('<details class="manage" data-open="openHandOver" open>');
+    expect(view(st('gm', {}))).toContain('<details class="manage" data-open="openHandOver">');
+  });
+  it('render reports a section opened or closed by hand', () => {
+    const details = { dataset: { open: 'openRemove' }, open: true, addEventListener(_, f) { this.toggle = f; } };
+    const root = { querySelectorAll: (sel) => (sel === 'details[data-open]' ? [details] : []) };
+    const setOpen = vi.fn();
+    render(root, st('gm', game()), { setOpen });
+    details.toggle();
+    expect(setOpen).toHaveBeenCalledWith('openRemove', true);
   });
 });
 

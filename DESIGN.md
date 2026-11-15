@@ -141,6 +141,7 @@ Small 0.4rem corners on buttons, fields, tags and the error box. Everything else
 - Primary: solid cobalt, white bold label, full width, 48px tall.
 - Secondary: transparent with a 2px ink outline, full width.
 - Choice: a whole ruled line you can tap (a name to pick or vote for): paper fill, cobalt text, rule-strong outline; fills cobalt on press, and on hover only on devices with a real pointer (`@media (hover: hover)`), because :hover sticks after a tap on phones.
+- Speaking order as the vote: during a round the numbered speaking order is the only list; every other name is a Choice button and your own row is plain text, inset to line up with the button labels. After voting the buttons become plain rows and "Vote sent" sits above the order.
 - Small: the per-row actions (Remove) and the Yes/Keep, Yes/Stay pairs, at least 44px tall.
 - Danger: solid red, only for confirming a removal that ends the round or leaving mid-game.
 - Link: Leave room, low emphasis, on every screen of a player other than the host. Mid-game it is replaced in place by the question "You're in a game. Leaving can hold it up for the others." with Yes, leave and Stay.

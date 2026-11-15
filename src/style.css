@@ -176,6 +176,9 @@ i { font-style: normal; color: var(--ink-soft); }
 .primary:active:not(:disabled) { background: var(--cobalt-press); }
 .choice:active:not(:disabled) { background: var(--cobalt); color: var(--on-cobalt); }
 .numbered > li:has(> .choice) > .choice { flex: 1; }
+/* The speaking order doubles as the vote: your own row lines up with the name buttons around it. */
+.order:has(.choice) > li > span { padding-left: calc(0.75rem + 2px); }
+.sent { margin: 0.25rem 0 0.75rem; }
 
 /* Forms */
 .stack { display: flex; flex-direction: column; }
