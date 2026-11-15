@@ -83,7 +83,10 @@ function openRoom(code) {
     if (startCode === code && !urlCode && !checked) {
       checked = true;
       const inRoom = data.room && (data.room.gmUid === s.uid || data.players.some((p) => p.uid === s.uid));
-      if (!inRoom) { remembered(null); leaveRoom(); return; }
+      const old = data.room && !Array.isArray(data.room.active);
+      if (!inRoom || old) remembered(null);
+      // An older-version room stays open so the join form can say so.
+      if (!inRoom && !old) { leaveRoom(); return; }
     }
     s.data = data;
     autoClose(data);
@@ -103,14 +106,14 @@ function leaveRoom() {
 
 // The game master's phone closes voting once every round player has voted, once per round.
 function autoClose({ room, votesCast }) {
-  if (!room || room.gmUid !== s.uid || room.phase !== 'voting') return;
+  if (!room?.active || room.gmUid !== s.uid || room.phase !== 'voting') return;
   if (votesCast !== room.roundPlayers.length || closingRound === room.round) return;
   closingRound = room.round;
   api.closeVoting(db, s.code).catch(() => { closingRound = null; });
 }
 
 const deal = (common, spy) => run(async () => {
-  await api.dealRound(db, s.code, common, spy);
+  await api.dealWords(db, s.code, common, spy);
   Object.assign(s.ui, { view: null, pair: null });
   Object.assign(s.ui.fields, { common: '', spy: '' });
 });
@@ -128,7 +131,7 @@ const actions = {
     await api.joinRoom(db, code, s.uid, s.ui.fields.name);
     openRoom(code);
   }),
-  newRound: () => { Object.assign(s.ui, { view: 'words', pair: nextPair(pairs, null), error: null }); update(); },
+  words: () => { Object.assign(s.ui, { view: 'words', pair: nextPair(pairs, null), error: null }); update(); },
   skip: () => { Object.assign(s.ui, { pair: nextPair(pairs, s.ui.pair), error: null }); update(); },
   back: () => { Object.assign(s.ui, { view: null, error: null }); update(); },
   usePair: () => deal(s.ui.pair.common, s.ui.pair.spy),
@@ -137,6 +140,7 @@ const actions = {
     if (!validPair(common, spy)) { s.ui.error = 'Type two different words.'; update(); return; }
     deal(common, spy);
   },
+  nextRound: () => run(() => api.nextRound(db, s.code)),
   pickStarter: (uid) => run(() => api.pickStarter(db, s.code, uid)),
   openVoting: () => run(() => api.openVoting(db, s.code)),
   closeVoting: () => run(() => api.closeVoting(db, s.code)),
@@ -144,7 +148,7 @@ const actions = {
     await api.castVote(db, s.code, s.uid, target);
   }),
   remove: (uid) => {
-    if (roundRunning() && s.data.room.roundPlayers.includes(uid) && s.ui.confirmRemove !== uid) { s.ui.confirmRemove = uid; update(); return; }
+    if (roundRunning() && s.data.room.active.includes(uid) && s.ui.confirmRemove !== uid) { s.ui.confirmRemove = uid; update(); return; }
     s.ui.confirmRemove = null;
     run(() => api.removePlayer(db, s.code, uid));
   },

@@ -1,34 +1,38 @@
 // Screens. `view` and `screenFor` are pure (no DOM) so they can be tested in node;
 // `render` writes the markup and wires the buttons to `actions`.
-import { MIN_PLAYERS, safeStarters, dealPair } from './game.js';
+import { MIN_PLAYERS, starterChoices, finalPoints, teams, dealPair } from './game.js';
 
 export const GAME_NAME = 'Spy Game';
 
-const BETWEEN_ROUNDS = ['lobby', 'reveal', 'cancelled'];
-
 const esc = (v) => String(v).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+// A room made by the version before Heroes vs Spies has no `active`.
+const oldRoom = (room) => !!room && !Array.isArray(room.active);
 
 // s = { uid, code, data, ui }: data is the subscribe() state (undefined until loaded).
 export function screenFor({ uid, code, data, ui = {} }) {
   if (!code) return 'join';
   if (data === undefined) return 'loading';
   const { room, players } = data;
-  if (!room) return 'join';
-  const between = BETWEEN_ROUNDS.includes(room.phase);
+  if (!room || oldRoom(room)) return 'join';
+  const { phase } = room;
   if (room.gmUid === uid) {
-    if (between) return ui.view === 'words' ? 'words' : 'lobby';
-    return room.phase === 'clues' && !room.starterUid ? 'pickStarter' : 'gmRound';
+    if (phase === 'lobby' || phase === 'gameOver') return ui.view === 'words' ? 'words' : 'lobby';
+    if (phase === 'result') return room.needsWords && ui.view === 'words' ? 'words' : 'gmResult';
+    return phase === 'clues' && !room.starterUid ? 'pickStarter' : 'gmRound';
   }
   if (!players.some((p) => p.uid === uid)) return 'join';
-  if (between) return room.phase === 'lobby' ? 'waiting' : room.phase;
-  if (!room.roundPlayers.includes(uid)) return 'outOfRound';
-  return room.phase === 'voting' ? 'vote' : 'word';
+  if (phase === 'lobby') return 'waiting';
+  if (phase === 'gameOver' || phase === 'result') return phase;
+  if (room.active.includes(uid)) return phase === 'voting' ? 'vote' : 'word';
+  return bench(room, uid) ? 'bench' : 'lateJoiner';
 }
+
+const bench = (room, uid) => (room.heroBench.includes(uid) ? 'Hero' : room.spyBench.includes(uid) ? 'Spy' : null);
 
 const nameOf = (data, uid) => {
   if (uid === data.room.gmUid) return data.room.gmName;
-  const p = data.players.find((x) => x.uid === uid);
-  return p ? p.name : 'A player who left';
+  return data.room.names?.[uid] ?? data.players.find((x) => x.uid === uid)?.name ?? 'A player who left';
 };
 
 const btn = (label, action, { arg = '', kind = 'primary', disabled = false, extra = '' } = {}) =>
@@ -40,6 +44,10 @@ const leaveBtn = btn('Leave room', 'leave', { kind: 'link' });
 
 const spyTag = '<span class="tag">Spy</span>';
 
+const nameList = (data, list, empty = 'Nobody yet') => (list.length
+  ? `<ul class="ruled">${list.map((id) => `<li><span>${esc(nameOf(data, id))}</span></li>`).join('')}</ul>`
+  : `<p class="hint">${empty}</p>`);
+
 const order = (data, mark) => `<ol class="ruled numbered">${data.room.roundPlayers
   .map((id) => `<li><span>${esc(nameOf(data, id))}</span>${mark ? mark(id) : ''}</li>`).join('')}</ol>`;
 
@@ -47,30 +55,59 @@ const wordsList = (w) => `<dl class="ruled pairs">
   <div><dt>Everyone's word</dt><dd>${esc(w.common)}</dd></div>
   <div><dt>Spy's word</dt><dd>${esc(w.spy)}</dd></div></dl>`;
 
-function result(data) {
+// The same for everyone, the spy included.
+const scoreLine = ({ heroes, spies }) => `<p class="score-line">Heroes <b>${heroes}</b> <span aria-hidden="true">·</span> Spies <b>${spies}</b></p>`;
+
+// `final` stays true after a voided final and at game over: read it only during a round.
+const finalLine = (room) => (room.final && (room.phase === 'clues' || room.phase === 'voting')
+  ? `<p class="final"><b>Final battle, worth ${finalPoints(room.score)}</b> points. Whoever wins it wins the game.</p>` : '');
+
+// The Spy bench lists only caught spies, so the scoreboard never points at the active one.
+const scoreboard = (data) => {
+  const { room } = data;
+  return `<section class="scoreboard" aria-label="Scoreboard">
+    <h2>Score</h2>${scoreLine(room.score)}
+    <h2>Hero bench</h2>${nameList(data, room.heroBench)}
+    <h2>Spy bench</h2>${nameList(data, room.spyBench)}
+    <h2>Still in (${room.active.length})</h2>${nameList(data, room.active, 'Nobody')}
+  </section>`;
+};
+
+function verdict(data) {
   const r = data.room.result;
-  // Names come from the result itself: the spy may be the player who was removed.
-  const spy = `<b>${esc(r.spyName ?? nameOf(data, r.spyUid))}</b> ${spyTag}`;
-  let head;
-  if (data.room.phase === 'cancelled') {
-    head = `<h1>Round cancelled</h1><p>A player was removed, so this round stopped.</p><p class="verdict">The spy was ${spy}</p>`;
-  } else if (r.winner === 'players') {
-    head = `<h1>Players win!</h1><p class="verdict">The players caught the spy: ${spy}</p>`;
-  } else if (r.votedOutUid) {
-    const out = esc(r.votedOutName ?? nameOf(data, r.votedOutUid));
-    head = `<h1>The spy wins!</h1><p class="verdict"><b>${out}</b> was voted out, but was not the spy. The spy was ${spy}</p>`;
-  } else {
-    head = `<h1>The spy wins!</h1><p class="verdict">Nobody was voted out: the votes were tied, or nobody voted. The spy was ${spy}</p>`;
+  const spyName = r.spyName && `<b>${esc(r.spyName)}</b>`;
+  if (r.voided) {
+    const head = `<h1>${spyName ?? 'A player'} left. This round doesn't count.</h1>`;
+    return spyName ? `${head}<p class="verdict">${spyName} ${spyTag} was the spy.</p>${wordsList(r)}` : head;
   }
-  return `<section class="result">${head}${wordsList(r)}</section>`;
+  const out = `<b>${esc(r.outName ?? nameOf(data, r.outUid))}</b>`;
+  // A non-spy result carries no words and no spy: that word set goes on.
+  return r.wasSpy
+    ? `<h1>${out} was the spy! Heroes +${r.points}.</h1>${wordsList(r)}`
+    : `<h1>${out} was not the spy. Spies +${r.points}.</h1>`;
 }
 
-const keepOpen = '<p class="keep"><b>Keep this screen open.</b> Your phone runs the round.</p>';
+function gameOver(data) {
+  const { room } = data;
+  const r = room.result ?? {};
+  const head = { heroes: 'Heroes win!', spies: 'Spies win!', draw: "It's a draw" }[room.winner] ?? 'Game over';
+  const t = teams({ ...room, spyUid: r.spyUid ?? null });
+  const won = (team) => (room.winner === team ? ' <i>(winners)</i>' : '');
+  return `<section class="result"><h1>${head}</h1>${scoreLine(room.score)}
+    ${r.spyName ? `<p class="verdict">The last spy was <b>${esc(r.spyName)}</b> ${spyTag}</p>` : ''}
+    ${r.common ? wordsList(r) : ''}
+    <h2>Heroes team${won('heroes')}</h2>${nameList(data, t.heroes, 'Nobody')}
+    <h2>Spies team${won('spies')}</h2>${nameList(data, t.spies, 'Nobody')}</section>`;
+}
 
-// Remove during a round cancels it, so each row asks first.
-function removeDuringRound(data, ui) {
-  const rows = data.players.map((p) => (ui.confirmRemove === p.uid && data.room.roundPlayers.includes(p.uid)
-    ? `<li class="confirm"><span>Remove ${esc(p.name)}? This ends the round.</span>
+const keepOpen = '<p class="keep"><b>Keep this screen open.</b> Your phone runs the game.</p>';
+const dealing = `${keepOpen}<p class="status" role="status">Dealing the words…</p>`;
+
+// Removing an active player mid-round voids the round, so those rows ask first.
+function removeList(data, ui) {
+  const asks = (id) => ['clues', 'voting'].includes(data.room.phase) && data.room.active.includes(id);
+  const rows = data.players.map((p) => (ui.confirmRemove === p.uid && asks(p.uid)
+    ? `<li class="confirm"><span>Remove ${esc(p.name)}? This round won't count.</span>
         <span class="row-actions">${btn('Yes, remove', 'remove', { arg: p.uid, kind: 'danger small', disabled: ui.busy })}${btn('Keep', 'cancelRemove', { kind: 'secondary small' })}</span></li>`
     : `<li><span>${esc(p.name)}</span><span class="row-actions">${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy, extra: ` aria-label="Remove ${esc(p.name)}"` })}</span></li>`)).join('');
   return `<details class="manage"${ui.confirmRemove ? ' open' : ''}><summary>Remove a player</summary><ol class="ruled">${rows}</ol></details>`;
@@ -86,6 +123,7 @@ const screens = {
       <label for="f-code">Room code</label>
       <input id="f-code" name="code" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false" class="code-input" required>
       ${code && data && data.room === null && !ui.error ? '<p class="error" role="alert"><b>Problem:</b> Room not found. Check the code with the game master.</p>' : ''}
+      ${code && oldRoom(data?.room) && !ui.error ? '<p class="error" role="alert"><b>Problem:</b> This room is from an older version. Create a new one.</p>' : ''}
       <button type="submit" class="btn primary"${ui.busy ? ' disabled' : ''}>Join room</button>
       ${errorLine(ui)}
     </form>
@@ -93,7 +131,7 @@ const screens = {
     ${btn('Create a room', 'create', { kind: 'secondary', disabled: ui.busy })}`,
 
   waiting: ({ uid, data }) => `<h1>You're in!</h1>
-    <p>Waiting for ${esc(data.room.gmName)} (game master) to start the round.</p>
+    <p>Waiting for ${esc(data.room.gmName)} (game master) to start the game.</p>
     <h2>Players (${data.players.length})</h2>
     <ol class="ruled numbered">${data.players.map((p) => `<li><span>${esc(p.name)}${p.uid === uid ? ' <i>(you)</i>' : ''}</span></li>`).join('')}</ol>
     ${leaveBtn}`,
@@ -101,17 +139,18 @@ const screens = {
   lobby: ({ code, data, ui }) => {
     const { room, players } = data;
     const short = players.length < MIN_PLAYERS;
+    const over = room.phase === 'gameOver';
     const rows = players.map((p) => `<li><span>${esc(p.name)}</span><span class="row-actions">
       ${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy, extra: ` aria-label="Remove ${esc(p.name)}"` })}</span></li>`).join('');
     // Kept apart from Remove so a slip on one row cannot hit the other action.
     const handOver = players.length ? `<details class="manage"><summary>Hand over the game master role</summary>
       <p class="hint">The new game master sees both words and the spy. You join as a player.</p>
       <ul class="ruled">${players.map((p) => `<li>${btn(`Make ${esc(p.name)} game master`, 'makeGm', { arg: p.uid, kind: 'choice', disabled: ui.busy })}</li>`).join('')}</ul></details>` : '';
-    return `${room.phase === 'lobby' ? '' : result(data)}
-      <section class="room-code">${room.phase === 'lobby' ? '<h1 class="label">Room code</h1>' : '<h2 class="label">Room code</h2>'}<p class="big">${esc(code)}</p><p>Read it out loud so players can join.</p></section>
+    return `${over ? gameOver(data) : ''}
+      <section class="room-code">${over ? '<h2 class="label">Room code</h2>' : '<h1 class="label">Room code</h1>'}<p class="big">${esc(code)}</p><p>Read it out loud so players can join.</p></section>
       <h2>Players (${players.length})</h2>
       ${players.length ? `<ol class="ruled numbered">${rows}</ol>` : '<p>No players yet.</p>'}
-      ${btn('New round', 'newRound', { disabled: short || ui.busy, extra: short ? ' aria-describedby="why-not"' : '' })}
+      ${btn('New game', 'words', { disabled: short || ui.busy, extra: short ? ' aria-describedby="why-not"' : '' })}
       ${short ? `<p id="why-not" class="hint">Needs at least ${MIN_PLAYERS} players. ${players.length} joined so far.</p>` : ''}
       ${errorLine(ui)}
       ${handOver}
@@ -138,28 +177,30 @@ const screens = {
 
   pickStarter: ({ data, ui }) => {
     const { secret, room } = data;
-    if (!secret) return `${keepOpen}<p class="status" role="status">Dealing the words…</p>`;
-    const safe = safeStarters(room.roundPlayers, secret.spyUid);
-    const rows = room.roundPlayers.map((id) => `<li>${safe.includes(id)
+    if (!secret) return dealing;
+    const choices = starterChoices(room.roundPlayers, secret.spyUid);
+    const rows = room.roundPlayers.map((id) => `<li>${choices.includes(id)
       ? btn(esc(nameOf(data, id)), 'pickStarter', { arg: id, kind: 'choice', disabled: ui.busy })
       : `<span class="unsafe">${esc(nameOf(data, id))}</span>${id === secret.spyUid ? spyTag : '<span class="note">too close to the spy</span>'}`}</li>`).join('');
     return `${keepOpen}<h1>Who speaks first?</h1>
-      <p>Tap a name. The spy will speak third or later.</p>
+      ${finalLine(room)}
+      <p>Tap a name. ${choices.length < room.roundPlayers.length ? 'The spy will speak third or later.' : 'Anyone can go first.'}</p>
       <ol class="ruled numbered">${rows}</ol>
       ${errorLine(ui)}
       ${wordsList(secret)}
-      ${removeDuringRound(data, ui)}`;
+      ${removeList(data, ui)}`;
   },
 
   gmRound: ({ data, ui }) => {
     const { secret, room, votesCast } = data;
-    if (!secret) return `${keepOpen}<p class="status" role="status">Dealing the words…</p>`;
+    if (!secret) return dealing;
     const voting = room.phase === 'voting';
     return `${keepOpen}<h1>${voting ? 'Voting' : 'Clues'}</h1>
+      ${finalLine(room)}
       ${voting
     ? `<p class="count" role="status"><b>${votesCast} of ${room.roundPlayers.length}</b> voted</p>
          ${btn('Close voting', 'closeVoting', { disabled: ui.busy })}
-         <p class="hint">Voting closes by itself when everyone has voted.</p>`
+         <p class="hint">Voting closes by itself when everyone still in has voted.</p>`
     : `${btn('Open voting', 'openVoting', { disabled: ui.busy })}
          <p class="hint">Open voting once everyone has said a clue.</p>`}
       ${errorLine(ui)}
@@ -167,36 +208,70 @@ const screens = {
       <p>The spy is <b>${esc(nameOf(data, secret.spyUid))}</b> ${spyTag}</p>
       <h2>Speaking order</h2>
       ${order(data, (id) => (id === secret.spyUid ? spyTag : ''))}
-      ${removeDuringRound(data, ui)}`;
+      ${scoreboard(data)}
+      ${removeList(data, ui)}`;
+  },
+
+  gmResult: ({ data, ui }) => {
+    const { room } = data;
+    const left = room.active.length;
+    // The room logic ends the game below 3; a spy caught with 3 or more left needs new words first.
+    const next = left < 3 ? btn('Show the final score', 'nextRound', { disabled: ui.busy })
+      : room.needsWords ? btn(left === 3 ? 'Pick words for the final battle' : 'Next round: pick new words', 'words', { disabled: ui.busy })
+      : btn(left === 3 ? 'Start the final battle' : 'Next round', 'nextRound', { disabled: ui.busy });
+    return `${keepOpen}<section class="result">${verdict(data)}</section>
+      ${next}
+      ${errorLine(ui)}
+      ${scoreboard(data)}
+      ${removeList(data, ui)}`;
   },
 
   // From here on, nothing may depend on who the spy is: only the word text differs.
   word: ({ uid, data }) => `<h1 class="label">Your word</h1>
     <p class="word">${data.myWord ? esc(data.myWord) : '<span class="status">Getting your word…</span>'}</p>
+    ${finalLine(data.room)}
     <p>Say one clue out loud. Don't say your word!</p>
     <h2>Speaking order</h2>
-    ${data.room.starterUid ? order(data, (id) => (id === uid ? '<i>(you)</i>' : '')) : '<p>Waiting for the game master to pick who goes first.</p>'}`,
+    ${data.room.starterUid ? order(data, (id) => (id === uid ? '<i>(you)</i>' : '')) : '<p>Waiting for the game master to pick who goes first.</p>'}
+    ${scoreLine(data.room.score)}`,
 
   vote: ({ uid, data, ui }) => (data.myVote === undefined
     ? '<p class="status" role="status">Checking your vote…</p>'
     : data.myVote
-    ? `<h1>Vote sent</h1><p>Wait for the game master to show the result.</p>`
+    ? `<h1>Vote sent</h1><p>Wait for the game master to show the result.</p>${finalLine(data.room)}${scoreLine(data.room.score)}`
     : `<h1>Who is the spy?</h1>
+      ${finalLine(data.room)}
       <p>Tap one name. You can only vote once.</p>
       <ul class="ruled">${data.room.roundPlayers.filter((id) => id !== uid)
     .map((id) => `<li>${btn(esc(nameOf(data, id)), 'vote', { arg: id, kind: 'choice', disabled: ui.busy })}</li>`).join('')}</ul>
       ${errorLine(ui)}
-      <p class="hint">Your word: <b>${data.myWord ? esc(data.myWord) : '…'}</b></p>`),
+      <p class="hint">Your word: <b>${data.myWord ? esc(data.myWord) : '…'}</b></p>
+      ${scoreLine(data.room.score)}`),
 
-  outOfRound: () => `<h1>Round in progress.</h1><p>You're in the next one.</p>`,
+  // Benched players see no word, ever: only the scoreboard.
+  bench: ({ uid, data }) => `<h1>You're on the ${bench(data.room, uid)} bench</h1>
+    <p>You win or lose with your team. Watch the score.</p>
+    ${scoreboard(data)}
+    ${leaveBtn}`,
 
-  reveal: ({ data }) => `${result(data)}<p>Waiting for the game master to start the next round.</p>${leaveBtn}`,
-  cancelled: (s) => screens.reveal(s),
+  lateJoiner: () => `<h1>A game is in progress. You're in the next one.</h1>${leaveBtn}`,
+
+  result: ({ uid, data }) => {
+    const b = bench(data.room, uid);
+    const playing = data.room.active.includes(uid);
+    return `<section class="result">${verdict(data)}</section>
+      ${b ? `<p class="you"><b>You're on the ${b} bench.</b></p>` : ''}
+      <p>Waiting for the game master to start the next round.</p>
+      ${scoreboard(data)}
+      ${playing ? '' : leaveBtn}`;
+  },
+
+  gameOver: ({ data }) => `${gameOver(data)}<p>Waiting for the game master to start a new game.</p>${leaveBtn}`,
 };
 
 export function view(s) {
   const screen = screenFor(s);
-  const code = s.data && s.data.room ? s.code : null;
+  const code = s.data && s.data.room && !oldRoom(s.data.room) ? s.code : null;
   return `<header class="cover"><span class="title">${GAME_NAME}</span>${code ? `<span class="code-chip">Room <b>${esc(code)}</b></span>` : ''}</header>
 <main class="page" data-screen="${screen}">${screens[screen]({ ...s, ui: s.ui || {} })}</main>`;
 }
@@ -225,8 +300,9 @@ export function render(root, s, actions) {
   const html = view(s);
   // Same markup: leave the DOM alone so typing and focus survive unrelated updates.
   if (root.renderedHtml === html) return;
-  // A new screen (or the Remove confirmation) under the finger: drop the second tap of a double tap.
-  const key = `${screenFor(s)}:${s.ui.confirmRemove ?? ''}`;
+  // A new screen, phase (Open voting becomes Close voting in place) or Remove confirmation
+  // under the finger: drop the second tap of a double tap.
+  const key = `${screenFor(s)}:${s.data?.room?.phase}:${s.ui.confirmRemove ?? ''}`;
   if (root.screenKey !== key) root.tapsFrom = Date.now() + TAP_GUARD_MS;
   root.screenKey = key;
   root.renderedHtml = html;

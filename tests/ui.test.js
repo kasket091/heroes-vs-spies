@@ -2,16 +2,28 @@ import { describe, it, expect, vi } from 'vitest';
 import { screenFor, view, nextPair, settle, render } from '../src/ui.js';
 import { isRoomCode } from '../src/game.js';
 
-const players = ['a', 'b', 'c', 'd'].map((uid) => ({ uid, name: uid.toUpperCase() }));
+const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+const NAMES = { a: 'Ann', b: 'Ben', c: 'Cara', d: 'Dev', e: 'Eli', f: 'Fay' };
+const players = ids.map((uid) => ({ uid, name: NAMES[uid] }));
 const room = (over = {}) => ({
-  gmUid: 'gm', gmName: 'Gina', phase: 'lobby', round: 1, roundPlayers: [], starterUid: null, result: null, ...over,
+  gmUid: 'gm', gmName: 'Gina', phase: 'lobby', round: 7, roundPlayers: [], starterUid: null, result: null,
+  active: [], names: {}, heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 },
+  wordSet: 1, needsWords: false, final: false, winner: null, ...over,
 });
 const st = (uid, roomOver, extra = {}, ui = {}) => ({
   uid, code: 'ABCD', ui: { fields: {}, ...ui },
   data: { room: room(roomOver), players, myWord: null, secret: null, votesCast: 0, ...extra },
 });
-const round = { roundPlayers: ['a', 'b', 'c', 'd'], round: 1 };
-const result = { votedOutUid: 'b', tie: false, winner: 'players', spyUid: 'b', common: 'Cola', spy: 'Water' };
+// A game in progress: e and f benched, a-d still in, c is the spy (only the gm's secret says so).
+const game = (over = {}) => ({
+  names: NAMES, active: ['a', 'b', 'c', 'd'], roundPlayers: ['a', 'b', 'c', 'd'], heroBench: ['e'], spyBench: ['f'],
+  score: { heroes: 1, spies: 1 }, phase: 'clues', starterUid: 'a', ...over,
+});
+const secret = { common: 'Cola', spy: 'Water', spyUid: 'c', wordSet: 1 };
+const notSpy = { outUid: 'b', outName: 'Ben', wasSpy: false, team: 'spies', points: 1, voided: false, spyUid: null, spyName: null, common: null, spy: null };
+const caught = { outUid: 'c', outName: 'Cara', wasSpy: true, team: 'heroes', points: 1, voided: false, spyUid: 'c', spyName: 'Cara', common: 'Cola', spy: 'Water' };
+const voidedHero = { ...notSpy, outUid: null, outName: null, team: null, points: 0, voided: true };
+const has = (html, action) => html.includes(`data-action="${action}"`);
 
 describe('screenFor: one test per row of the screen table', () => {
   it('no room in the URL: join', () => expect(screenFor({ uid: 'a', code: null, data: null })).toBe('join'));
@@ -20,88 +32,207 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(screenFor(s)).toBe('join');
     expect(view(s)).toContain('Room not found');
   });
-  it('game master, lobby/reveal/cancelled: lobby', () => {
-    for (const phase of ['lobby', 'reveal', 'cancelled']) expect(screenFor(st('gm', { phase, result }))).toBe('lobby');
+  it('old room: a room without active shows the join form with the older-version message', () => {
+    for (const uid of ['gm', 'a']) {
+      const s = st(uid, { phase: 'voting', roundPlayers: ['a', 'b'] });
+      delete s.data.room.active;
+      expect(screenFor(s)).toBe('join');
+      expect(view(s)).toContain('This room is from an older version. Create a new one.');
+    }
   });
-  it('game master tapped New round: words', () => expect(screenFor(st('gm', {}, {}, { view: 'words' }))).toBe('words'));
-  it('game master, clues, no starter: pickStarter', () => expect(screenFor(st('gm', { ...round, phase: 'clues' }))).toBe('pickStarter'));
-  it('game master, clues/voting with starter: gmRound', () => {
-    for (const phase of ['clues', 'voting']) expect(screenFor(st('gm', { ...round, phase, starterUid: 'c' }))).toBe('gmRound');
+  it('game master, lobby or gameOver: lobby, with the final result above at gameOver', () => {
+    expect(screenFor(st('gm', {}))).toBe('lobby');
+    const s = st('gm', game({ phase: 'gameOver', winner: 'heroes', score: { heroes: 5, spies: 4 }, result: caught }));
+    expect(screenFor(s)).toBe('lobby');
+    const html = view(s);
+    expect(html.indexOf('Heroes win')).toBeLessThan(html.indexOf('Room code'));
+    expect(has(html, 'words')).toBe(true);
   });
-  it('round player, clues: word', () => expect(screenFor(st('a', { ...round, phase: 'clues' }))).toBe('word'));
-  it('round player, voting: vote', () => expect(screenFor(st('a', { ...round, phase: 'voting', starterUid: 'c' }))).toBe('vote'));
-  it('player not in the round: outOfRound', () => {
-    expect(screenFor(st('d', { roundPlayers: ['a', 'b', 'c'], phase: 'voting' }))).toBe('outOfRound');
+  it('game master, words needed: words for a new game, or a result with needsWords', () => {
+    expect(screenFor(st('gm', {}, {}, { view: 'words' }))).toBe('words');
+    expect(screenFor(st('gm', game({ phase: 'gameOver' }), {}, { view: 'words' }))).toBe('words');
+    expect(screenFor(st('gm', game({ phase: 'result', result: caught, needsWords: true }), {}, { view: 'words' }))).toBe('words');
+    expect(screenFor(st('gm', game({ phase: 'result', result: notSpy }), {}, { view: 'words' }))).toBe('gmResult');
   });
-  it('anyone (not game master), reveal: reveal', () => expect(screenFor(st('a', { phase: 'reveal', result }))).toBe('reveal'));
-  it('anyone (not game master), cancelled: cancelled', () => expect(screenFor(st('a', { phase: 'cancelled', result }))).toBe('cancelled'));
-  it('uid not in the room: join with the code prefilled', () => expect(screenFor(st('stranger', { phase: 'lobby' }))).toBe('join'));
+  it('game master, clues without a starter: pickStarter, starterChoices decides what is tappable', () => {
+    const five = st('gm', game({ active: ['a', 'b', 'c', 'd', 'e'], roundPlayers: ['a', 'b', 'c', 'd', 'e'], heroBench: [], starterUid: null }), { secret });
+    expect(screenFor(five)).toBe('pickStarter');
+    const html5 = view(five);
+    expect(html5).toContain('too close to the spy');
+    expect(html5.match(/data-action="pickStarter"/g).length).toBe(3);
+    for (const n of [4, 3]) {
+      const s = st('gm', game({ active: ids.slice(0, n), roundPlayers: ids.slice(0, n), starterUid: null }), { secret });
+      const html = view(s);
+      expect(html).not.toContain('too close to the spy');
+      expect(html.match(/data-action="pickStarter"/g).length).toBe(n);
+    }
+  });
+  it('game master, clues/voting: gmRound with words, spy, order, scoreboard, keep open, final line', () => {
+    for (const phase of ['clues', 'voting']) expect(screenFor(st('gm', game({ phase })))).toBe('gmRound');
+    const html = view(st('gm', game({ phase: 'voting', final: true, score: { heroes: 1, spies: 4 }, active: ['a', 'b', 'c'], roundPlayers: ['a', 'b', 'c'] }), { secret, votesCast: 2 }));
+    for (const t of ['Cola', 'Water', 'Keep this screen open', '2 of 3', 'Final battle, worth 4', 'Hero bench', 'Spy bench', 'Eli', 'Fay']) expect(html).toContain(t);
+    expect(view(st('gm', game({ phase: 'clues' }), { secret }))).not.toContain('Final battle');
+  });
+  it('game master, result: gmResult with the result, scoreboard, Next round and Remove', () => {
+    const s = st('gm', game({ phase: 'result', result: notSpy, active: ['a', 'c', 'd'], heroBench: ['e', 'b'] }));
+    expect(screenFor(s)).toBe('gmResult');
+    const html = view(s);
+    expect(html).toMatch(/Ben<\/b> was not the spy/);
+    for (const t of ['Hero bench', 'data-action="nextRound"', 'Remove']) expect(html).toContain(t);
+  });
+  it('active player, clues/voting: word, vote; with a score line and the final line when final', () => {
+    expect(screenFor(st('a', game({ phase: 'clues' })))).toBe('word');
+    expect(screenFor(st('a', game({ phase: 'voting' }), { myVote: null }))).toBe('vote');
+    const html = view(st('a', game({ final: true, active: ['a', 'b', 'c'], roundPlayers: ['a', 'b', 'c'], score: { heroes: 1, spies: 4 } }), { myWord: 'Cola' }));
+    expect(html).toContain('Heroes <b>1</b>');
+    expect(html).toContain('Spies <b>4</b>');
+    expect(html).toContain('Final battle, worth 4');
+    expect(view(st('a', game(), { myWord: 'Cola' }))).not.toContain('Final battle');
+  });
+  it('benched player, any phase before gameOver: bench, scoreboard only', () => {
+    for (const phase of ['clues', 'voting']) {
+      expect(screenFor(st('e', game({ phase })))).toBe('bench');
+      expect(screenFor(st('f', game({ phase })))).toBe('bench');
+    }
+    expect(view(st('e', game()))).toContain("You're on the Hero bench");
+    expect(view(st('f', game()))).toContain("You're on the Spy bench");
+    expect(view(st('e', game({ phase: 'result', result: notSpy })))).toContain("You're on the Hero bench");
+  });
+  it('in players but not in the game, game running: lateJoiner', () => {
+    const s = st('a', game({ active: ['b', 'c', 'd', 'e'], roundPlayers: ['b', 'c', 'd', 'e'], heroBench: [], names: { b: 'Ben', c: 'Cara', d: 'Dev', e: 'Eli' } }));
+    expect(screenFor(s)).toBe('lateJoiner');
+    expect(view(s)).toContain("A game is in progress. You're in the next one.");
+  });
+  it('anyone, result: the three verdicts, then the scoreboard', () => {
+    const spyHtml = view(st('a', game({ phase: 'result', result: caught, needsWords: true, active: ['a', 'b', 'd'], spyBench: ['f', 'c'] })));
+    expect(screenFor(st('a', game({ phase: 'result', result: caught })))).toBe('result');
+    expect(spyHtml).toMatch(/Cara<\/b> was the spy! Heroes \+1\./);
+    expect(spyHtml).toContain('Cola');
+    expect(spyHtml).toContain('Water');
+    expect(spyHtml.indexOf('was the spy')).toBeLessThan(spyHtml.indexOf('Hero bench'));
+    expect(view(st('a', game({ phase: 'result', result: notSpy })))).toMatch(/Ben<\/b> was not the spy\. Spies \+1\./);
+    const left = view(st('a', game({ phase: 'result', result: { ...voidedHero, voided: true, wasSpy: false, spyUid: 'c', spyName: 'Cara', common: 'Cola', spy: 'Water' }, needsWords: true })));
+    expect(left).toMatch(/Cara<\/b> left\. This round doesn't count\./);
+    expect(left).toContain('Water');
+    const leftHero = view(st('a', game({ phase: 'result', result: voidedHero })));
+    expect(leftHero).toContain("A player left. This round doesn't count.");
+  });
+  it('anyone, gameOver: final score, winner, both teams by name, last spy and words', () => {
+    const over = game({ phase: 'gameOver', active: ['a', 'b', 'c'], winner: 'spies', score: { heroes: 1, spies: 8 }, result: { ...notSpy, spyUid: 'c', spyName: 'Cara', common: 'Cola', spy: 'Water' } });
+    expect(screenFor(st('a', over))).toBe('gameOver');
+    expect(screenFor(st('e', over))).toBe('gameOver');
+    const html = view(st('a', over));
+    for (const t of ['Spies win!', 'Heroes <b>1</b>', 'Spies <b>8</b>', 'Cola', 'Water']) expect(html).toContain(t);
+    const heroes = html.slice(html.indexOf('Heroes team'), html.indexOf('Spies team'));
+    for (const n of ['Ann', 'Ben', 'Eli']) expect(heroes).toContain(n);
+    expect(heroes).not.toContain('Cara');
+    expect(html.slice(html.indexOf('Spies team'))).toContain('Fay');
+    expect(view(st('a', { ...over, winner: 'draw', score: { heroes: 2, spies: 2 } }))).toContain("It's a draw");
+    const unknown = view(st('a', { ...over, result: { ...notSpy } }));
+    expect(unknown).not.toContain('Cola');
+    expect(unknown).not.toContain('last spy');
+  });
+  it('uid not in the room: join', () => expect(screenFor(st('stranger', {}))).toBe('join'));
   it('player in lobby: waiting', () => expect(screenFor(st('a', {}))).toBe('waiting'));
   it('subscription not loaded yet: loading', () => expect(screenFor({ uid: 'a', code: 'ABCD', data: undefined })).toBe('loading'));
 });
 
-describe('view', () => {
-  it('spy and non-spy player screens differ only in the word', () => {
-    for (const phase of ['clues', 'voting']) {
-      const r = { ...round, phase, starterUid: 'a', roundPlayers: ['a', 'b', 'c', 'd'] };
-      // A player's state carries no spy info, only myWord; same seat with the spy word vs the common word.
-      const spy = view(st('c', r, { myWord: 'Water' })).replace('Water', 'WORD');
-      const other = view(st('c', r, { myWord: 'Cola' })).replace('Cola', 'WORD');
-      expect(spy).toBe(other);
+describe('screenFor re-entry (a reload: fresh ui, same room)', () => {
+  it('game master returns to the round or result', () => {
+    expect(screenFor(st('gm', game({ phase: 'voting' }), { secret }))).toBe('gmRound');
+    expect(screenFor(st('gm', game({ phase: 'result', result: caught, needsWords: true })))).toBe('gmResult');
+  });
+  it('active player returns to the word', () => {
+    const s = st('b', game(), { myWord: 'Cola' });
+    expect(screenFor(s)).toBe('word');
+    expect(view(s)).toContain('Cola');
+  });
+  it('benched player returns to the scoreboard', () => expect(screenFor(st('e', game({ phase: 'voting' })))).toBe('bench'));
+  it('late joiner, or a removed active player who rejoined, waits for the next game', () => {
+    // b was in the game (in names), was removed, and joined again: not in active, on no bench.
+    expect(screenFor(st('b', game({ active: ['a', 'c', 'd'], roundPlayers: ['a', 'c', 'd'] })))).toBe('lateJoiner');
+  });
+});
+
+describe('secrecy on player screens', () => {
+  it('a "not the spy" result names no spy and shows neither word', () => {
+    for (const uid of ['a', 'e', 'gm']) {
+      const html = view(st(uid, game({ phase: 'result', result: notSpy, active: ['a', 'c', 'd'], heroBench: ['e', 'b'] }), { myWord: 'Cola' }));
+      expect(html).not.toContain('Cola');
+      expect(html).not.toContain('Water');
+      expect(html).not.toContain('class="tag"');
+      // Cara (the spy) is only listed among the players still in, like everyone else.
+      expect(html.slice(html.indexOf('<section class="result">'), html.indexOf('</section>'))).not.toContain('Cara');
     }
   });
+  it("the active spy's view equals a hero's view apart from the word, also in the final", () => {
+    for (const final of [false, true]) {
+      for (const [phase, extra] of [['clues', {}], ['voting', { myVote: null }], ['voting', { myVote: 'a' }], ['voting', { myVote: undefined }]]) {
+        const r = game({ phase, final, active: ['a', 'b', 'c'], roundPlayers: ['a', 'b', 'c'], score: { heroes: 2, spies: 1 } });
+        const spy = view(st('c', r, { ...extra, myWord: 'Water' })).replace('Water', 'WORD');
+        const hero = view(st('c', r, { ...extra, myWord: 'Cola' })).replace('Cola', 'WORD');
+        expect(spy).toBe(hero);
+      }
+    }
+  });
+  it('the benched view contains no word', () => {
+    for (const phase of ['clues', 'voting']) {
+      const html = view(st('e', game({ phase }), { myWord: 'Cola' }));
+      expect(html).not.toContain('Cola');
+      expect(html).not.toContain('Your word');
+    }
+  });
+  it('the scoreboard lists only caught spies on the Spy bench', () => {
+    const html = view(st('e', game()));
+    const spyBench = html.slice(html.indexOf('Spy bench'), html.indexOf('Still in'));
+    expect(spyBench).toContain('Fay');
+    expect(spyBench).not.toContain('Cara');
+  });
+});
+
+describe('Next round for the game master', () => {
+  const gr = (over) => view(st('gm', game({ phase: 'result', ...over })));
+  it('opens Words only when needsWords', () => {
+    const words = gr({ result: caught, needsWords: true });
+    expect(has(words, 'words')).toBe(true);
+    expect(has(words, 'nextRound')).toBe(false);
+    const next = gr({ result: notSpy });
+    expect(has(next, 'nextRound')).toBe(true);
+    expect(has(next, 'words')).toBe(false);
+  });
+  it('ends the game when fewer than 3 are left, even if words are needed', () => {
+    const html = gr({ result: caught, needsWords: true, active: ['a', 'b'] });
+    expect(has(html, 'nextRound')).toBe(true);
+    expect(html).toContain('Show the final score');
+  });
+  it('says the next round is the final battle at 3', () => {
+    expect(gr({ result: notSpy, active: ['a', 'c', 'd'] })).toContain('Start the final battle');
+  });
+});
+
+describe('view', () => {
   it('game master sees a waiting state, not a stale spy, while secret is null', () => {
-    const html = view(st('gm', { ...round, phase: 'clues' }));
+    const html = view(st('gm', game({ starterUid: null })));
     expect(html).toContain('Dealing the words');
     expect(html).not.toContain('Spy</span>');
   });
-  it('New round is disabled with the reason under 4 players', () => {
+  it('New game is disabled with the reason under 4 players', () => {
     const s = st('gm', {});
     s.data.players = players.slice(0, 3);
     const html = view(s);
-    expect(html).toMatch(/data-action="newRound"[^>]*disabled/);
+    expect(html).toMatch(/data-action="words"[^>]*disabled/);
+    expect(html).toContain('New game');
     expect(html).toContain('3 joined so far');
   });
   it('escapes player names', () => {
     const s = st('gm', {});
     s.data.players = [{ uid: 'x', name: '<img src=x onerror=alert(1)>' }];
     expect(view(s)).not.toContain('<img');
+    const g = st('e', game({ names: { ...NAMES, f: '<img src=x>' } }));
+    expect(view(g)).not.toContain('<img');
   });
-  it('round screen shows votes cast out of round players', () => {
-    const html = view(st('gm', { ...round, phase: 'voting', starterUid: 'a' }, { votesCast: 2, secret: { common: 'Cola', spy: 'Water', spyUid: 'c', round: 1 } }));
-    expect(html).toContain('2 of 4');
-    expect(html).toContain('Keep this screen open');
-  });
-});
-
-describe('result screens use the names stored in the result', () => {
-  const gone = (phase, r) => {
-    const s = st('a', { phase, result: r });
-    s.data.players = players.filter((p) => p.uid !== r.spyUid && p.uid !== r.votedOutUid);
-    return view(s);
-  };
-  const base = { tie: false, common: 'Cola', spy: 'Water', spyUid: 'zz', spyName: 'Cara' };
-  it('cancelled after the spy was removed still names the spy', () => {
-    const html = gone('cancelled', { ...base, votedOutUid: null, winner: null, votedOutName: null });
-    expect(html).toContain('Round cancelled');
-    expect(html).toContain('Cara');
-    expect(html).not.toContain('who left');
-  });
-  it('spy caught: names the spy once', () => {
-    const html = gone('reveal', { ...base, votedOutUid: 'zz', votedOutName: 'Cara', winner: 'players' });
-    expect(html).toContain('Players win!');
-    expect(html.match(/Cara/g).length).toBe(1);
-  });
-  it('someone else voted out: says who, that they were not the spy, and who was', () => {
-    const html = gone('reveal', { ...base, votedOutUid: 'yy', votedOutName: 'Ben', winner: 'spy' });
-    expect(html).toContain('The spy wins!');
-    expect(html).toMatch(/Ben<\/b> was voted out, but was not the spy/);
-    expect(html.match(/Cara/g).length).toBe(1);
-  });
-  it('tie: nobody voted out, names the spy once', () => {
-    const html = gone('reveal', { ...base, tie: true, votedOutUid: null, votedOutName: null, winner: 'spy' });
-    expect(html).toContain('Nobody was voted out');
-    expect(html.match(/Cara/g).length).toBe(1);
+  it('never shows the stored round number', () => {
+    for (const s of [st('gm', game(), { secret }), st('a', game(), { myWord: 'Cola' }), st('e', game())]) expect(view(s)).not.toMatch(/Round 7/);
   });
 });
 
@@ -163,31 +294,47 @@ describe('render ignores taps right after the screen changes', () => {
       expect(remove).toHaveBeenCalledWith('b');
     } finally { vi.useRealTimers(); }
   });
+  it('also guards Open voting turning into Close voting on the same screen', () => {
+    vi.useFakeTimers();
+    try {
+      const root = fakeRoot();
+      const remove = vi.fn();
+      render(root, st('gm', game({ phase: 'clues' }), { secret }), { remove });
+      vi.advanceTimersByTime(301);
+      render(root, st('gm', game({ phase: 'voting' }), { secret }), { remove });
+      root.button.click();
+      expect(remove).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
 });
 
 describe('leave room button', () => {
-  const has = (html) => html.includes('data-action="leave"');
-  it('on the waiting, reveal and cancelled screens and the game master lobby', () => {
-    expect(has(view(st('a', {})))).toBe(true);
-    for (const phase of ['reveal', 'cancelled']) {
-      expect(has(view(st('a', { phase, result })))).toBe(true);
-      expect(has(view(st('gm', { phase, result })))).toBe(true);
-    }
-    expect(has(view(st('gm', {})))).toBe(true);
+  const leave = (html) => has(html, 'leave');
+  it('offered between games, to benched players and to late joiners', () => {
+    expect(leave(view(st('a', {})))).toBe(true);
+    expect(leave(view(st('gm', {})))).toBe(true);
     expect(view(st('gm', {}))).toContain('The room stays open');
+    const over = game({ phase: 'gameOver', winner: 'draw', result: notSpy });
+    expect(leave(view(st('a', over)))).toBe(true);
+    expect(leave(view(st('gm', over)))).toBe(true);
+    for (const phase of ['clues', 'voting', 'result']) {
+      expect(leave(view(st('e', game({ phase, result: phase === 'result' ? notSpy : null }))))).toBe(true);
+      expect(leave(view(st('x', game({ phase, result: phase === 'result' ? notSpy : null }), {}, {})))).toBe(false); // not in players: join form
+    }
+    const late = st('a', game({ active: ['b', 'c', 'd', 'e'], roundPlayers: ['b', 'c', 'd', 'e'], heroBench: [] }));
+    expect(leave(view(late))).toBe(true);
   });
-  it('never mid-round', () => {
-    for (const phase of ['clues', 'voting']) {
-      for (const who of ['a', 'gm', 'x']) {
-        const html = view(st(who, { ...round, phase, starterUid: 'c' }, { secret: { common: 'a', spy: 'b', spyUid: 'c', round: 1 }, myVote: null }));
-        expect(has(html)).toBe(false);
-      }
+  it('never to an active player or the game master mid-game', () => {
+    for (const phase of ['clues', 'voting', 'result']) {
+      const r = game({ phase, result: phase === 'result' ? notSpy : null });
+      expect(leave(view(st('a', r, { myVote: null })))).toBe(false);
+      expect(leave(view(st('gm', r, { secret })))).toBe(false);
     }
   });
 });
 
 describe('vote screen', () => {
-  const vs = (extra, ui = {}) => view(st('a', { ...round, phase: 'voting', starterUid: 'c' }, extra, ui));
+  const vs = (extra, ui = {}) => view(st('a', game({ phase: 'voting' }), extra, ui));
   it('shows a status, not buttons, until the own vote is known', () => {
     const html = vs({ myVote: undefined });
     expect(html).toContain('Checking your vote');
@@ -197,16 +344,21 @@ describe('vote screen', () => {
     expect(vs({ myVote: 'b' })).toContain('Vote sent');
     expect(vs({ myVote: null }, { voted: true })).toContain('Who is the spy?');
   });
+  it('offers only other active players', () => {
+    const html = vs({ myVote: null });
+    expect(html.match(/data-action="vote"/g).length).toBe(3);
+    expect(html).not.toContain('data-arg="e"');
+  });
 });
 
-describe('remove during a round', () => {
-  it('a late joiner is removed without the round warning', () => {
-    const s = st('gm', { roundPlayers: ['a', 'b', 'c'], phase: 'clues', starterUid: 'a' }, { secret: { common: 'Cola', spy: 'Water', spyUid: 'c', round: 1 } }, { confirmRemove: 'd' });
-    expect(view(s)).not.toContain('This ends the round');
+describe('remove', () => {
+  it('a benched player is removed mid-round without the round warning', () => {
+    const s = st('gm', game(), { secret }, { confirmRemove: 'e' });
+    expect(view(s)).not.toContain("This round won't count");
   });
-  it('keeps the Remove section open while asking to confirm', () => {
-    const s = st('gm', { ...round, phase: 'clues', starterUid: 'a' }, { secret: { common: 'Cola', spy: 'Water', spyUid: 'c', round: 1 } }, { confirmRemove: 'c' });
+  it('keeps the Remove section open while asking to confirm an active player', () => {
+    const s = st('gm', game(), { secret }, { confirmRemove: 'c' });
     expect(view(s)).toContain('<details class="manage" open>');
-    expect(view(s)).toContain('Remove C? This ends the round.');
+    expect(view(s)).toContain("Remove Cara? This round won't count.");
   });
 });

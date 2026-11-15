@@ -251,6 +251,24 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
 .manage[open] summary::before { transform: rotate(45deg); }
 .confirm > span:first-child { font-weight: 700; }
 
+/* Score: the same line on every phone, the spy's included */
+.score-line { margin: 1.5rem 0 0.75rem; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.score-line b { font-size: 1.5rem; }
+.scoreboard { margin-top: 2rem; }
+.scoreboard h2 { margin-top: 1.25rem; }
+.scoreboard .score-line { margin-top: 0.25rem; }
+.scoreboard .ruled { margin-bottom: 0; }
+/* The final battle is announced in words, boxed like a note pinned to the page */
+.final {
+  margin: 0.75rem 0 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--cobalt);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.final b { color: var(--cobalt); }
+.you { font-size: 1.25rem; }
+
 /* Player word: written on a copybook three-line guide (top, dashed middle, baseline) */
 .label { margin: 1rem 0 0; color: var(--ink-soft); font-size: 1.125rem; }
 .word {
