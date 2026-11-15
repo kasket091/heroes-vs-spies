@@ -16,11 +16,11 @@ Families with kids, in the same room, each holding their own phone. Mixed ages a
 
 ## Product Purpose
 
-A spy word party game. Everyone gets the same secret word except one player, the spy, who gets a related word and is not told they are the spy. Players give clues out loud, then vote once on who the spy is. Success is a round that starts in under a minute, never leaks the spy, and makes people want another round.
+A spy word party game, played as Heroes vs Spies. Everyone gets the same secret word except one player, the spy, who gets a related word and is not told they are the spy. Players give clues out loud, then vote one player out. If that player was the spy, the Heroes score a point and a new spy gets new words. If not, the Spies score a point and the same spy and words go on. Voted-out players sit on the Hero bench or the Spy bench and win or lose with that team. When 3 players are left, a final battle worth the score gap plus 1 decides the game. Success is a round that starts in under a minute, never leaks the spy, and makes people want another game.
 
 ## Positioning
 
-The game master is a person in the room who sees everything: both words and who the spy is. They approve or skip each word pair before it reaches the players and pick who speaks first, and the app guarantees at least 2 people speak before the spy.
+The game master is a person in the room who sees everything: both words and who the spy is. They approve or skip each word pair before it reaches the players and pick who speaks first, and with 5 or more players still in, the app guarantees at least 2 people speak before the spy.
 
 ## Operating Context
 
@@ -32,13 +32,16 @@ The game master is a person in the room who sees everything: both words and who 
 ## Capabilities and Constraints
 
 - One game master slot, any number of player slots, minimum 4 players to start.
-- Phases: lobby, clues, voting, reveal, cancelled.
-- A player's screen must never show or hint who the spy is before the reveal; all player screens look identical.
-- One vote per round; a tie or no votes means the spy wins.
+- Phases: lobby, clues, voting, result, gameOver.
+- A player's screen must never show or hint who the spy is while that spy is still in the game; all player screens look identical apart from the word. A "not the spy" result shows no words and no spy, and the Spy bench lists only spies already caught.
+- One vote per round benches one player. A tie (or no votes) draws one of the tied players at random, the spy included, and the result does not mention the tie.
+- With 5 or more players still in, the spy speaks third or later; with 4 or 3, anyone may start.
+- Final battle at 3 players: one vote worth the score gap plus 1, so its winner wins the game. Fewer than 3 left (after removals) ends the game on the current score; a level score is a draw.
+- Benched players see only the scoreboard and are not dealt words. Late joiners wait for the next game. Scores start at 0–0 each game.
 - 70 built-in word pairs in `words/word-pairs.json`; the game master can type their own.
-- No chat, accounts, scoreboard, or multiple spies.
+- No chat, accounts, scores carried between games, or more than one spy at a time.
 - English interface.
-- Full rules: `docs/superpowers/specs/2026-11-15-spy-game-design.md`.
+- Full rules: `docs/superpowers/specs/2026-11-15-heroes-vs-spies-design.md` (builds on `2026-11-15-spy-game-design.md`).
 
 ## Brand Commitments
 

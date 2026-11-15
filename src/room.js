@@ -39,6 +39,8 @@ export async function joinRoom(db, code, uid, rawName) {
   const name = cleanName(rawName);
   if (!name) throw new Error('Name needed');
   const room = await getRoom(db, code);
+  // A room made by the version before Heroes vs Spies: refuse before writing anything.
+  if (!Array.isArray(room.active)) throw new Error('Old room');
   // The game master already has their own screen; a player doc would put them in the deal.
   if (room.gmUid === uid) return;
   const taken = (await getDocs(playersQuery(db, code))).docs.some((d) => d.id !== uid && d.data().name.toLowerCase() === name.toLowerCase());
@@ -241,7 +243,7 @@ export async function removePlayer(db, code, uid) {
         update.phase = 'result';
         // The words and the spy are shown only if the spy is the one leaving.
         update.result = {
-          ...blankResult, voided: true,
+          ...blankResult, voided: true, outUid: uid, outName: room.names[uid] ?? null,
           ...(isSpy && { spyUid: uid, spyName: room.names[uid] ?? null, common: secret.common, spy: secret.spy }),
         };
       }

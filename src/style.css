@@ -255,9 +255,11 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
 .score-line { margin: 1.5rem 0 0.75rem; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
 .score-line b { font-size: 1.5rem; }
 .scoreboard { margin-top: 2rem; }
-.scoreboard h2 { margin-top: 1.25rem; }
 .scoreboard .score-line { margin-top: 0.25rem; }
-.scoreboard .ruled { margin-bottom: 0; }
+.scoreboard .score-line b, .result .score-line b { font-size: 2rem; }
+.board > div { flex-wrap: nowrap; align-items: baseline; padding: 0.5rem 0; }
+.board dt { flex: none; min-width: 7.5rem; }
+.board dd { font-weight: 400; font-size: 1.125rem; }
 /* The final battle is announced in words, boxed like a note pinned to the page */
 .final {
   margin: 0.75rem 0 1rem;

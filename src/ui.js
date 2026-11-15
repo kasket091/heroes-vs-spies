@@ -4,6 +4,20 @@ import { MIN_PLAYERS, starterChoices, finalPoints, teams, dealPair } from './gam
 
 export const GAME_NAME = 'Spy Game';
 
+const KNOWN = {
+  'Room not found': 'Room not found. Check the code with the game master.',
+  'Name needed': 'Type your name first.',
+  'Name already taken': 'Someone here already has that name. Pick another one.',
+  'Code needed': 'Type the room code.',
+  'Not enough players': `Not enough players. You need at least ${MIN_PLAYERS}.`,
+  'Invalid word pair': 'Type two different words.',
+  'Old room': 'This room is from an older version. Create a new one.',
+};
+const ROOM_ERRORS = ['Round already running', 'No round to start', 'Not a safe starter', 'Cannot open voting yet', 'Player not found'];
+export const friendly = (e) => KNOWN[e.message] || (ROOM_ERRORS.includes(e.message) ? `${e.message}.` : 'Something went wrong. Check your internet and try again.');
+
+const points = (n) => `${n} point${n === 1 ? '' : 's'}`;
+
 const esc = (v) => String(v).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 // A room made by the version before Heroes vs Spies has no `active`.
@@ -60,16 +74,22 @@ const scoreLine = ({ heroes, spies }) => `<p class="score-line">Heroes <b>${hero
 
 // `final` stays true after a voided final and at game over: read it only during a round.
 const finalLine = (room) => (room.final && (room.phase === 'clues' || room.phase === 'voting')
-  ? `<p class="final"><b>Final battle, worth ${finalPoints(room.score)}</b> points. Whoever wins it wins the game.</p>` : '');
+  ? `<p class="final"><b>Final battle, worth ${points(finalPoints(room.score))}.</b> Whoever wins it wins the game.</p>` : '');
+
+const namesRow = (data, label, list, empty) => `<div><dt>${label}</dt><dd>${list.length
+  ? list.map((id) => esc(nameOf(data, id))).join(', ') : `<i>${empty}</i>`}</dd></div>`;
 
 // The Spy bench lists only caught spies, so the scoreboard never points at the active one.
-const scoreboard = (data) => {
+// stillIn is left out where the speaking order already lists the active players.
+const scoreboard = (data, { stillIn = true } = {}) => {
   const { room } = data;
   return `<section class="scoreboard" aria-label="Scoreboard">
     <h2>Score</h2>${scoreLine(room.score)}
-    <h2>Hero bench</h2>${nameList(data, room.heroBench)}
-    <h2>Spy bench</h2>${nameList(data, room.spyBench)}
-    <h2>Still in (${room.active.length})</h2>${nameList(data, room.active, 'Nobody')}
+    <dl class="ruled pairs board">
+      ${namesRow(data, 'Hero bench', room.heroBench, 'Nobody yet')}
+      ${namesRow(data, 'Spy bench', room.spyBench, 'Nobody yet')}
+      ${stillIn ? namesRow(data, `Still in (${room.active.length})`, room.active, 'Nobody') : ''}
+    </dl>
   </section>`;
 };
 
@@ -77,7 +97,8 @@ function verdict(data) {
   const r = data.room.result;
   const spyName = r.spyName && `<b>${esc(r.spyName)}</b>`;
   if (r.voided) {
-    const head = `<h1>${spyName ?? 'A player'} left. This round doesn't count.</h1>`;
+    const who = r.outName ?? r.spyName;
+    const head = `<h1>${who ? `<b>${esc(who)}</b>` : 'A player'} left. This round doesn't count.</h1>`;
     return spyName ? `${head}<p class="verdict">${spyName} ${spyTag} was the spy.</p>${wordsList(r)}` : head;
   }
   const out = `<b>${esc(r.outName ?? nameOf(data, r.outUid))}</b>`;
@@ -93,7 +114,10 @@ function gameOver(data) {
   const head = { heroes: 'Heroes win!', spies: 'Spies win!', draw: "It's a draw" }[room.winner] ?? 'Game over';
   const t = teams({ ...room, spyUid: r.spyUid ?? null });
   const won = (team) => (room.winner === team ? ' <i>(winners)</i>' : '');
+  // points > 0 only when a final vote wrote this result; endGame keeps an older outName with 0 points.
+  const out = r.outName && r.points > 0 ? esc(r.outName) : null;
   return `<section class="result"><h1>${head}</h1>${scoreLine(room.score)}
+    ${out ? `<p class="verdict"><b>${out}</b> was voted out. ${out} ${r.wasSpy ? 'was the spy!' : 'was not the spy.'}</p>` : ''}
     ${r.spyName ? `<p class="verdict">The last spy was <b>${esc(r.spyName)}</b> ${spyTag}</p>` : ''}
     ${r.common ? wordsList(r) : ''}
     <h2>Heroes team${won('heroes')}</h2>${nameList(data, t.heroes, 'Nobody')}
@@ -123,7 +147,7 @@ const screens = {
       <label for="f-code">Room code</label>
       <input id="f-code" name="code" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false" class="code-input" required>
       ${code && data && data.room === null && !ui.error ? '<p class="error" role="alert"><b>Problem:</b> Room not found. Check the code with the game master.</p>' : ''}
-      ${code && oldRoom(data?.room) && !ui.error ? '<p class="error" role="alert"><b>Problem:</b> This room is from an older version. Create a new one.</p>' : ''}
+      ${code && oldRoom(data?.room) && !ui.error ? `<p class="error" role="alert"><b>Problem:</b> ${KNOWN['Old room']}</p>` : ''}
       <button type="submit" class="btn primary"${ui.busy ? ' disabled' : ''}>Join room</button>
       ${errorLine(ui)}
     </form>
@@ -208,7 +232,7 @@ const screens = {
       <p>The spy is <b>${esc(nameOf(data, secret.spyUid))}</b> ${spyTag}</p>
       <h2>Speaking order</h2>
       ${order(data, (id) => (id === secret.spyUid ? spyTag : ''))}
-      ${scoreboard(data)}
+      ${scoreboard(data, { stillIn: false })}
       ${removeList(data, ui)}`;
   },
 
@@ -261,7 +285,7 @@ const screens = {
     const playing = data.room.active.includes(uid);
     return `<section class="result">${verdict(data)}</section>
       ${b ? `<p class="you"><b>You're on the ${b} bench.</b></p>` : ''}
-      <p>Waiting for the game master to start the next round.</p>
+      <p>${playing || b ? 'Waiting for the game master to start the next round.' : "You're in the next game."}</p>
       ${scoreboard(data)}
       ${playing ? '' : leaveBtn}`;
   },

@@ -79,6 +79,13 @@ describe('room data layer', () => {
     await expect(joinRoom(u.p1.db, 'ZZZZ', u.p1.uid, 'A')).rejects.toThrow('Room not found');
   });
 
+  it('joinRoom refuses a room from the older version before writing anything', async () => {
+    const code = 'QQQQ';
+    await setDoc(doc(u.gm.db, 'rooms', code), { gmUid: u.gm.uid, gmName: 'Gina', phase: 'lobby', round: 0, roundPlayers: [], starterUid: null, result: null });
+    await expect(joinRoom(u.p1.db, code, u.p1.uid, 'Ann')).rejects.toThrow('Old room');
+    expect((await getDoc(doc(u.p1.db, 'rooms', code, 'players', u.p1.uid))).exists()).toBe(false);
+  });
+
   it("joinRoom with '   ' rejects with Name needed", async () => {
     const code = await lobby(0);
     await expect(joinRoom(u.p1.db, code, u.p1.uid, '   ')).rejects.toThrow('Name needed');
@@ -316,7 +323,7 @@ describe('room data layer', () => {
     const out = hero(room, secret);
     await removePlayer(u.gm.db, code, out);
     const { room: after } = await state('gm', code, (s) => s.room?.phase === 'result');
-    expect(after.result).toMatchObject({ voided: true, outUid: null, wasSpy: false });
+    expect(after.result).toMatchObject({ voided: true, outUid: out, outName: `Player${idOf(out).slice(1)}`, wasSpy: false });
     expect(after).toMatchObject({ score: { heroes: 0, spies: 0 }, heroBench: [], spyBench: [], needsWords: false });
     expect(after.active).not.toContain(out);
     await expectNoSecrets(code);
@@ -329,7 +336,8 @@ describe('room data layer', () => {
     await openVoting(u.gm.db, code);
     await removePlayer(u.gm.db, code, secret.spyUid);
     const { room: after } = await state('gm', code, (s) => s.room?.phase === 'result');
-    expect(after.result).toMatchObject({ voided: true, spyUid: secret.spyUid, spyName: `Player${idOf(secret.spyUid).slice(1)}`, common: secret.common, spy: secret.spy });
+    const name = `Player${idOf(secret.spyUid).slice(1)}`;
+    expect(after.result).toMatchObject({ voided: true, outUid: secret.spyUid, outName: name, spyUid: secret.spyUid, spyName: name, common: secret.common, spy: secret.spy });
     expect(after.needsWords).toBe(true);
     expect(after.spyBench).toEqual([]);
   });

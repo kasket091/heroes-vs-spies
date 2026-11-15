@@ -152,8 +152,8 @@ White fields with a 2px ink-soft border and a bold label above. The room code fi
 None beyond the cover band. Each screen shows one thing; the game state decides the screen.
 
 ### Score line and scoreboard
-- Score line: "Heroes **N** · Spies **N**" in tabular numerals, the same on every phone (the spy's too).
-- Scoreboard: the score line, then Hero bench, Spy bench and Still in as ruled name lists under h2 labels. The Spy bench lists only caught spies.
+- Score line: "Heroes **N** · Spies **N**" in tabular numerals, the same on every phone (the spy's too). The numbers are 1.5rem on round screens and 2rem on the scoreboard and at game over, where the score is the point of the screen.
+- Scoreboard: an h2 "Score" and the score line, then one ruled label-and-names row each for Hero bench, Spy bench and Still in (the same row pattern as the word pairs, names in regular weight, comma-separated). Still in is left out where a speaking order already lists the players. The Spy bench lists only caught spies.
 
 ### Final battle note
 A white box with a 2px cobalt outline and the words "Final battle, worth N points" in bold cobalt. Shown during the final round only, identical for every player.

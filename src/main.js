@@ -4,7 +4,7 @@ import { firebaseConfig } from './firebase-config.js';
 import { initFirebase, signIn } from './firebase.js';
 import * as api from './room.js';
 import { validPair, isRoomCode } from './game.js';
-import { render, settle, nextPair, GAME_NAME } from './ui.js';
+import { render, settle, nextPair, friendly, GAME_NAME } from './ui.js';
 
 document.title = GAME_NAME;
 const root = document.getElementById('app');
@@ -38,17 +38,6 @@ const s = {
 let unsubscribe = () => {};
 let closingRound = null;
 let checked = false;
-
-const KNOWN = {
-  'Room not found': 'Room not found. Check the code with the game master.',
-  'Name needed': 'Type your name first.',
-  'Name already taken': 'Someone here already has that name. Pick another one.',
-  'Code needed': 'Type the room code.',
-  'Not enough players': 'Not enough players. You need at least 4.',
-  'Invalid word pair': 'Type two different words.',
-};
-const ROOM_ERRORS = ['Round already running', 'No round to start', 'Not a safe starter', 'Cannot open voting yet', 'Player not found'];
-const friendly = (e) => KNOWN[e.message] || (ROOM_ERRORS.includes(e.message) ? `${e.message}.` : 'Something went wrong. Check your internet and try again.');
 
 let last = null;
 const update = () => {
