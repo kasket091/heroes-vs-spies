@@ -11,13 +11,13 @@ Lines marked **(call)** are choices Claude made, not things Dave asked for. Ever
 
 Dave wants the game to have a story that explains itself, and an ending where the last three players always take the top three places.
 
-**The story.** Every player is a Hero. A virus is hiding in one of them, and that player does not know. The Heroes' mission is to find it. The virus is clever: after every round it jumps to a different Hero. When only three players are left, the two healthy Heroes get one shot at picking the carrier out of the three.
+**The story.** Every player is a Hero. A virus is hiding in one of them, and that player does not know. The Heroes' mission is to find it. The virus is clever: after every round it picks its next host at random. It may jump to another Hero or stay where it is. When only three players are left, the two healthy Heroes get one shot at picking the carrier out of the three.
 
 ## What changes for people
 
 | The no-game-master version at the preview | New |
 |---|---|
-| The same spy and the same words carry on until the spy is caught | A new carrier and new words every round |
+| The same spy and the same words carry on until the spy is caught | The carrier is picked afresh every round (it may be the same player), with new words every round |
 | Heroes vs Spies team score, a Hero bench and a Spy bench | No teams, no team score, no benches. Each player has their own points |
 | The result hides the spy and the words when a Hero is voted out | Every result reveals who the carrier was and both words |
 | The final is worth the score gap plus 1 and decides which team wins | The final decides the order of the top three |
@@ -25,7 +25,7 @@ Dave wants the game to have a story that explains itself, and an ending where th
 
 ## Goals
 
-- A new carrier every round, picked at random from the players still in. The virus never jumps straight back to the player it just left. (Dave; **call** on "straight back" being the only exclusion.) "The player it just left" is the carrier named in the most recent result of this game, if that player is still in. The first round of a new game excludes nobody. **(call)**
+- The carrier is picked afresh every round, at random from ALL the players still in, the last carrier included. So after a round the virus survives, it may stay or jump (Dave, 2026-11-16). **(call: every player still in is equally likely. A higher chance of staying would make the player just named the obvious suspect.)**
 - New words every round, from the word families, never repeating a pair in a room.
 - One player is voted out every round, until three are left. Then the final battle.
 - After every round the game reveals: who was voted out and whether they were the carrier, who the carrier was, both words, and the points just earned.
@@ -60,30 +60,30 @@ Dave wants the game to have a story that explains itself, and an ending where th
 ## Things this design knowingly accepts
 
 - **Points decide little.** The last three always take the top three places, so points only order the two Heroes on the podium and the players below it. In a simulation of the points alone, the three highest scorers were exactly the last three in 8% to 64% of games; in the rest, someone voted out had more points than someone on the podium. Dave chose the clear ending. (Told to Dave.)
-- **One fewer suspect each round.** The result names the last carrier, and the virus never jumps straight back, so that player is known to be healthy in the next round. (Told to Dave.) At the final this can leave only two suspects among the three: if the last carrier is one of the final three, everyone knows the virus is in one of the other two.
+- **Naming the last carrier gives nothing away.** The next carrier is picked from everyone still in with equal chance, so the player just named is exactly as likely as anyone else.
 - **The +1s show who voted for a caught carrier.** Nothing is shown about votes in rounds where the carrier survived.
-- **The first two speakers are known to be healthy** in a round with 6 or more players. This now applies in every round, because every round has new words. It does not add up from round to round, since the carrier changes. Together with the named last carrier, a round can have three players known to be healthy. That is why the rule now starts at 6 players, not 5: at 5 it would leave only 2 suspects, fewer than a 4-player round has. **(call: changes Dave's original threshold; flagged to him)**
+- **The first two speakers are known to be healthy** in a round with 5 or more players, as in Dave's original rule. This now applies in every round, because every round has new words. It does not add up from round to round, since the carrier is picked afresh each time.
 
 ## Trade-offs carried over from the earlier designs, re-weighed
 
 - **"A spy's points must stay hidden until the spy is revealed"** (from the personal-scores draft). No longer needed: the carrier is revealed in the same result that awards their points.
 - **"A result hides the spy and words when a Hero is voted out, because the word set continues."** No longer needed: the word set never continues.
-- **"The safe-starter rule applies only in the first round of a word set"** (added after it was found to reveal the spy across rounds). Every round is now a first round. The problem it fixed came from the same spy across rounds, which can no longer happen.
+- **"The safe-starter rule applies only in the first round of a word set"** (added after it was found to reveal the spy across rounds). Every round is now a first round with new words. The problem it fixed came from a carrier known to be the same across rounds; now nobody can tell whether the carrier is the same, so two cleared speakers in one round say nothing about the next.
 - **"Word families are used evenly, so a returning family cannot be narrowed from memory."** Still needed and more important: a 12-player game now uses 10 pairs instead of roughly 4.
 - **"The host's phone holds the secret."** Unchanged. It now also picks a new carrier every round and awards points; it could already read everything needed.
-- **"Removing a player during a round cancels that round."** Unchanged, and simpler: the next round always has a new carrier and new words anyway. A cancelled round scores nothing, and its result still reveals the carrier and the words, because nothing depends on hiding them any more. **(call)**
+- **"Removing a player during a round cancels that round."** Unchanged, and simpler: the next round always has a fresh pick and new words anyway. A cancelled round scores nothing, and its result still reveals the carrier and the words, because nothing depends on hiding them any more. **(call)**
 - **"Every automatic step is safe to run twice."** Must still hold with points: a result and its points are written in one step.
 - **Rooms from an earlier version.** Rooms made on the current preview follow the old rules, and a phone still on the old preview page would run a new room wrongly. New rooms therefore store their list of players still in under a new name again, so each version refuses the other's rooms in both directions. Preview games in progress are abandoned. **(call)**
 
 ## How a game goes
 
 1. **Lobby.** As now: the host is a player; New game needs at least 4 people.
-2. **Round.** The game picks an unused word pair, a carrier (not the last one), and a first speaker (with 6 or more players, two speak before the carrier; with 5 or fewer, anyone may speak first). Each phone shows its word and the list that is both speaking order and vote buttons.
+2. **Round.** The game picks an unused word pair, a carrier (any player still in), and a first speaker (with 5 or more players, two speak before the carrier; with 4 or 3, anyone may speak first). Each phone shows its word and the list that is both speaking order and vote buttons.
 3. **Vote.** As now, including ties (one tied player is drawn at random) and "Close the vote now".
 4. **Result.** One of:
    - "Ana had the virus! She is cured." and +1 for everyone who voted for Ana.
    - "Ben was healthy! The virus was hiding in Ana." and +2 for Ana.
-   - then, in both cases while more than three were playing: "The virus has jumped again." Both words are shown, and the points table.
+   - then, in both cases while more than three were playing, always the same line: "The virus is on the move." It must not say whether the virus stayed or jumped. Both words are shown, and the points table.
 5. **Next round** starts by itself after about 10 seconds, as now.
 6. **Final battle** with three players, announced on every phone. One vote.
    - The carrier is voted out: the Heroes win. Each Hero who voted for the carrier gets +1.
