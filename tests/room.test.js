@@ -192,13 +192,27 @@ describe('room data layer', () => {
       await expect(joinRoom(u.p1.db, code, u.p1.uid, 'Ann')).rejects.toThrow('Old room');
       expect((await getDoc(doc(u.p1.db, 'rooms', code, 'players', u.p1.uid))).exists()).toBe(false);
     }
+    // A result with no stamp: without the guard the host loop would advance it at once.
     const old = 'OLDR';
-    await setDoc(doc(u.h.db, 'rooms', old), { gmUid: u.h.uid, gmName: 'Gina', phase: 'voting', round: 1, roundPlayers: ['a'], seats: ['a'], result: null });
-    const stop = runRoom(u.h.db, old, u.h.uid, FAM, fakeClock());
+    const before = { gmUid: u.h.uid, gmName: 'Gina', phase: 'result', round: 1, roundPlayers: ['a'], seats: ['a'], result: null, resultAt: null };
+    await setDoc(doc(u.h.db, 'rooms', old), before);
+    const onError = vi.fn();
+    const stop = runRoom(u.h.db, old, u.h.uid, FAM, { ...fakeClock(), onError });
     try {
       await sleep(600);
-      expect((await rawRoom(old, 'h')).phase).toBe('voting');
+      expect(await rawRoom(old, 'h')).toEqual(before);
+      expect(onError).not.toHaveBeenCalled();
     } finally { stop(); }
+  });
+
+  it('previous-version room: startGame and removePlayer refuse it with Old room and write nothing', async () => {
+    for (const [code, phase] of [['OLDS', 'lobby'], ['OLDT', 'voting']]) {
+      const before = { gmUid: u.h.uid, gmName: 'Gina', phase, round: 1, roundPlayers: ['a', 'b'], seats: ['a', 'b'], result: null, resultAt: null };
+      await setDoc(doc(u.h.db, 'rooms', code), before);
+      await expect(startGame(u.h.db, code, FAM)).rejects.toThrow('Old room');
+      await expect(removePlayer(u.h.db, code, 'a')).rejects.toThrow('Old room');
+      expect(await rawRoom(code, 'h')).toEqual(before);
+    }
   });
 
   it('joinRoom refuses a name from the running game for a different uid; the same uid may rejoin with it', async () => {

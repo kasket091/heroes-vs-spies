@@ -1,5 +1,5 @@
 /* World: a page from a school writing pad. Cobalt cover, newsprint page,
-   pale blue rules, one red margin rule. Red only ever appears with a word. */
+   pale blue rules, one red margin rule. Red only ever appears with a word (errors, dangerous actions). */
 :root {
   --paper: #f3f5f2;
   --paper-deep: #e6ebe7;
@@ -106,21 +106,6 @@ i { font-style: normal; color: var(--ink-soft); }
 .pairs > div { justify-content: flex-start; }
 .pairs dt { color: var(--ink-soft); font-size: 1rem; min-width: 8.5rem; }
 .pairs dd { margin: 0; font-weight: 700; font-size: 1.25rem; }
-
-/* Written mark for the spy: always the word itself, never colour alone */
-.tag {
-  display: inline-block;
-  padding: 0 0.5rem;
-  border: 2px solid var(--red);
-  border-radius: var(--radius);
-  color: var(--red);
-  font-weight: 700;
-  font-size: 0.875rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  line-height: 1.6;
-  vertical-align: 0.15em;
-}
 
 /* Buttons */
 .btn {
@@ -262,15 +247,28 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
   font-weight: 700;
 }
 
-/* Score: the same line on every phone, the spy's included */
-.score-line { margin: 1.5rem 0 0.75rem; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
-.score-line b { font-size: 1.5rem; }
-.scoreboard { margin-top: 2rem; }
-.scoreboard .score-line { margin-top: 0.25rem; }
-.scoreboard .score-line b, .result .score-line b { font-size: 2rem; }
-.board > div { flex-wrap: nowrap; align-items: baseline; padding: 0.5rem 0; }
-.board dt { flex: none; min-width: 7.5rem; }
-.board dd { font-weight: 400; font-size: 1.125rem; }
+/* Points: name on the line, the number in tabular figures at the right */
+.pts { color: var(--ink-soft); font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pts b { color: var(--ink); font-size: 1.25rem; }
+.mine { margin-top: 1.5rem; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.mine b { font-size: 1.5rem; }
+.story { font-size: 1.25rem; }
+
+/* The reveal: who it was, where the virus hid, both words, then the points just earned */
+.result h2.reveal { margin-top: 1rem; }
+.gains { margin: 0.5rem 0 0; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.gains b { display: inline-block; min-width: 2.5rem; }
+.next { margin-top: 1.5rem; font-weight: 700; }
+
+/* Game over: place, name, points. The podium three are written larger, on a stronger rule. */
+.ranking > li { justify-content: flex-start; flex-wrap: nowrap; }
+.ranking .place { flex: none; width: 3.25rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.ranking .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.podium { border-top: 2px solid var(--rule-strong); }
+.podium > li { min-height: calc(var(--line) * 1.25); font-size: 1.375rem; font-weight: 700; }
+.podium .place { color: var(--ink); }
+.podium .pts { font-weight: 400; }
+
 /* The final battle is announced in words, boxed like a note pinned to the page */
 .final {
   margin: 0.75rem 0 1rem;
@@ -280,7 +278,6 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
   background: #fff;
 }
 .final b { color: var(--cobalt); }
-.you { font-size: 1.25rem; }
 
 /* Player word: written on a copybook three-line guide (top, dashed middle, baseline) */
 .label { margin: 1rem 0 0; color: var(--ink-soft); font-size: 1.125rem; }

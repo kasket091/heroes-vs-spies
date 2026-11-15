@@ -97,7 +97,7 @@ components:
 
 ## Overview
 
-The phone is a page from a school writing pad, the kind every kid in the family has filled in: a cobalt pad cover on top, a cool newsprint page below it, pale blue writing rules, and one red margin rule down the left. It refuses the spy-game default (dark noir, redacted bars, dossiers). Mode is Operate: the world lends palette, type, density and one signature move; the controls are plain web buttons, fields and lists.
+The phone is a page from a school writing pad, the kind every kid in the family has filled in: a cobalt pad cover on top, a cool newsprint page below it, pale blue writing rules, and one red margin rule down the left. It refuses the spy-game default (dark noir, redacted bars, dossiers); the story on screen is a virus hiding in one of the Heroes, told in kid-friendly words (the carrier is "cured", a Hero voted out by mistake is "sent to rest"). Mode is Operate: the world lends palette, type, density and one signature move; the controls are plain web buttons, fields and lists.
 
 The signature move is the player's word written on a copybook three-line guide (top line, light middle line, baseline), large enough to read at arm's length in a glance.
 
@@ -112,7 +112,7 @@ The signature move is the player's word written on a copybook three-line guide (
 - **Rule** and **Rule strong** draw the writing lines. They are decoration only and carry no meaning.
 
 ### Named Rules
-- **The Red Pen Rule.** Red (`red`) marks only the spy and errors, and is always paired with a written word ("SPY", "Problem:"). The margin rule (`margin`) is the only decorative red.
+- **The Red Pen Rule.** Red (`red`) marks only errors and the buttons that confirm leaving mid-game or removing a player, and is always paired with a written word ("Problem:", "Yes, leave"). The margin rule (`margin`) is the only decorative red.
 
 ## Typography
 
@@ -144,7 +144,7 @@ Small 0.4rem corners on buttons, fields, tags and the error box. Everything else
 - Speaking order as the vote: during a round the numbered speaking order is the only list; every other name is a Choice button and your own row is plain text, inset to line up with the button labels. After voting the buttons become plain rows and "Vote sent" sits above the order.
 - Small: the per-row actions (Remove) and the Yes/Keep, Yes/Stay pairs, at least 44px tall.
 - Danger: solid red, only for confirming a removal that ends the round or leaving mid-game.
-- Link: Leave room, low emphasis, on every screen of a player other than the host. Mid-game it is replaced in place by the question "You're in a game. Leaving can hold it up for the others." with Yes, leave and Stay.
+- Link: Leave room, low emphasis, on every screen of a player other than the host. For a player still in the game, mid-game, it is replaced in place by the question "You're in a game. Leaving can hold it up for the others." with Yes, leave and Stay.
 - Disabled: 45% opacity with the reason written beside it.
 
 ### Inputs / Fields
@@ -153,15 +153,19 @@ White fields with a 2px ink-soft border and a bold label above. The room code fi
 ### Navigation
 None beyond the cover band. Each screen shows one thing; the game state decides the screen.
 
-### Score line and scoreboard
-- Score line: "Heroes **N** · Spies **N**" in tabular numerals, the same on every phone (the spy's too). The numbers are 1.5rem on round screens and 2rem on the scoreboard and at game over, where the score is the point of the screen.
-- Scoreboard: an h2 "Score" and the score line, then one ruled label-and-names row each for Hero bench, Spy bench and Still in (the same row pattern as the word pairs, names in regular weight, comma-separated). The Spy bench lists only caught spies.
+### Points
+- Own points: during a vote, a player in the game sees one line, "You have **N** points", under the speaking order. Nobody else's points show during a vote.
+- Points table: an h2 "Points" and a ruled row per player dealt into the game, name on the left and "**N** points" on the right in tabular figures, most points first. On the result screen, the voted-out screen and nowhere during a vote for players still in.
+- Points just earned: one line per amount under the two words, "**+2** Ann", "**+1** Ben, Cara", or "No points this round."
+
+### Reveal
+Every result: an h1 naming who went out ("Ben was healthy and is sent to rest.", "Cara had the virus! Cara is cured.", "Ben left. This round doesn't count."), "The virus was hiding in **Cara**." when it was someone else, then the two words as label-and-word rows ("Healthy word", "Virus word"), then the points just earned, then one bold line: "The virus is on the move. Next round starts in a moment." The same line whether the virus stays or moves; it is left out when the game is ending.
+
+### Ranking
+Game over: an h1 for how it ended ("The virus got away!", "The Heroes caught the virus!", or "Not enough players left."), the final's reveal under an h2, then the stored ranking as ruled rows of place ("1st", level places share the number), name and points. "Top three" sits on a 2px rule-strong line with larger bold rows; "Voted out" and "Did not finish" follow in body size. With no final there is no "Top three" and the first group has no heading.
 
 ### Final battle note
-A white box with a 2px cobalt outline and the words "Final battle, worth N point" or "points" in bold cobalt. Shown during the final round only, identical for every player.
-
-### Spy tag
-An outlined red uppercase "SPY" word next to a name. Shown only in results that reveal the spy and at game over.
+A white box with a 2px cobalt outline: "**Final battle!** Three of you left. This vote decides the top three." Shown during the final vote only, identical for every player.
 
 ## Do's and Don'ts
 
@@ -169,7 +173,7 @@ An outlined red uppercase "SPY" word next to a name. Shown only in results that 
 - Put one thing per screen and let the big word or the big code lead.
 - Write every state in words: "Vote sent", "Waiting for: Ann, Ben", "Next round starts in a moment."
 - Give the host the same screens as everyone else, plus only the keep-open strip and a collapsed "Remove a player".
-- Keep player screens identical for the spy and everyone else: only the word text may differ.
+- Keep voting screens identical for the carrier and everyone else: only the word text may differ.
 
 ### Don't:
 - Don't use red, or any colour, as the only signal.

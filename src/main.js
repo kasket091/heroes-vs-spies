@@ -93,7 +93,7 @@ function openRoom(code) {
     if (startCode === code && !urlCode && !checked) {
       checked = true;
       const inRoom = data.room && data.players.some((p) => p.uid === s.uid);
-      const old = data.room && !Array.isArray(data.room.seats);
+      const old = data.room && !Array.isArray(data.room.inGame);
       if (!inRoom || old) remembered(null);
       // An older-version room stays open so the join form can say so.
       if (!inRoom && !old) { leaveRoom(); return; }
@@ -101,8 +101,8 @@ function openRoom(code) {
     s.data = data;
     if (touched !== code && data.players.some((p) => p.uid === s.uid)) { touched = code; api.touchPlayer(db, code, s.uid); }
     // The host's phone runs the room in the background; a hand-over moves that to the new host's phone.
-    // Not for a room from the older version (no seats).
-    const host = data.room?.gmUid === s.uid && Array.isArray(data.room.seats);
+    // Not for a room from the older version (no inGame).
+    const host = data.room?.gmUid === s.uid && Array.isArray(data.room.inGame);
     if (host && !stopRunner) {
       const stop = api.runRoom(db, code, s.uid, families, {
         // A step that fails after this runner was stopped or replaced must not leave a stale Problem line.
@@ -146,7 +146,7 @@ const actions = {
     await api.castVote(db, s.code, s.uid, target);
   }),
   remove: (uid) => {
-    if (voting() && s.data.room.seats.includes(uid) && s.ui.confirmRemove !== uid) { s.ui.confirmRemove = uid; update(); return; }
+    if (voting() && s.data.room.inGame.includes(uid) && s.ui.confirmRemove !== uid) { s.ui.confirmRemove = uid; update(); return; }
     s.ui.confirmRemove = null;
     run(() => api.removePlayer(db, s.code, uid));
   },

@@ -1,7 +1,7 @@
 // Screens. `view` and `screenFor` are pure (no DOM) so they can be tested in node;
 // `render` writes the markup and wires the buttons to `actions`.
 // Nothing here may read gm/secret, the used pairs or the votes: the host's screens are a player's.
-import { MIN_PLAYERS, finalPoints, teams, stalled } from './game.js';
+import { MIN_PLAYERS, stalled } from './game.js';
 
 export const GAME_NAME = 'Heroes vs Spies';
 
@@ -19,12 +19,10 @@ const KNOWN = {
 const ROOM_ERRORS = ['Round already running', 'Player not found'];
 export const friendly = (e) => KNOWN[e.message] || (ROOM_ERRORS.includes(e.message) ? `${e.message}.` : 'Something went wrong. Check your internet and try again.');
 
-const points = (n) => `${n} point${n === 1 ? '' : 's'}`;
-
 const esc = (v) => String(v).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// A room made by an older version has no `seats`.
-const oldRoom = (room) => !!room && !Array.isArray(room.seats);
+// A room made by an older version has no `inGame`.
+const oldRoom = (room) => !!room && !Array.isArray(room.inGame);
 const isHost = ({ uid, data }) => data.room.gmUid === uid;
 const midGame = (room) => room.phase === 'voting' || room.phase === 'result';
 
@@ -40,11 +38,9 @@ export function screenFor({ uid, code, data }) {
   if (room.phase === 'lobby') return host ? 'lobby' : 'waiting';
   if (room.phase === 'gameOver') return host ? 'lobby' : 'gameOver';
   if (room.phase === 'result') return 'result';
-  if (room.seats.includes(uid)) return 'vote';
-  return bench(room, uid) ? 'bench' : 'lateJoiner';
+  if (room.inGame.includes(uid)) return 'vote';
+  return room.out.includes(uid) ? 'out' : 'lateJoiner';
 }
-
-const bench = (room, uid) => (room.heroBench.includes(uid) ? 'Hero' : room.spyBench.includes(uid) ? 'Spy' : null);
 
 const nameOf = (data, uid) => data.room.names?.[uid] ?? data.players.find((x) => x.uid === uid)?.name ?? 'A player who left';
 
@@ -55,48 +51,64 @@ const errorLine = (msg) => (msg ? `<p class="error" role="alert"><b>Problem:</b>
 
 const you = (on) => (on ? ' <i>(you)</i>' : '');
 
-// Players other than the host can always leave; a seated player mid-game is asked first.
+// Players other than the host can always leave; a player still in the game is asked first.
 function leaveBlock({ uid, data, ui }) {
   const { room } = data;
-  if (!(midGame(room) && room.seats.includes(uid))) return btn('Leave room', 'leave', { kind: 'link' });
+  if (!(midGame(room) && room.inGame.includes(uid))) return btn('Leave room', 'leave', { kind: 'link' });
   if (!ui.confirmLeave) return btn('Leave room', 'askLeave', { kind: 'link' });
   return `<div class="ask" role="group" aria-label="Leave room">
     <p><b>You're in a game. Leaving can hold it up for the others.</b></p>
     <div class="row-actions">${btn('Yes, leave', 'leave', { kind: 'danger small', disabled: ui.busy })}${btn('Stay', 'stay', { kind: 'secondary small' })}</div></div>`;
 }
 
-const spyTag = '<span class="tag">Spy</span>';
-
 const nameList = (data, list, empty = 'Nobody yet') => (list.length
   ? `<ul class="ruled">${list.map((id) => `<li><span>${esc(nameOf(data, id))}</span></li>`).join('')}</ul>`
   : `<p class="hint">${empty}</p>`);
 
-const wordsList = (w) => `<dl class="ruled pairs">
-  <div><dt>Everyone's word</dt><dd>${esc(w.common)}</dd></div>
-  <div><dt>Spy's word</dt><dd>${esc(w.spy)}</dd></div></dl>`;
+const wordsList = (r) => `<dl class="ruled pairs">
+  <div><dt>Healthy word</dt><dd>${esc(r.common)}</dd></div>
+  <div><dt>Virus word</dt><dd>${esc(r.odd)}</dd></div></dl>`;
 
-// The same for everyone, the spy included.
-const scoreLine = ({ heroes, spies }) => `<p class="score-line">Heroes <b>${heroes}</b> <span aria-hidden="true">·</span> Spies <b>${spies}</b></p>`;
+const pointsText = (n) => `<b>${n}</b> point${n === 1 ? '' : 's'}`;
+const pts = (n) => `<span class="pts">${pointsText(n)}</span>`;
+
+// Everyone dealt into this game, in a fixed order: still in, voted out, removed.
+const dealt = (room) => [...room.inGame, ...room.out, ...room.gone];
+
+// Points change only in a result, which names that round's carrier, so this table never points at the current one.
+function pointsTable({ uid, data }) {
+  const { room } = data;
+  const score = (id) => room.points?.[id] ?? 0;
+  const rows = dealt(room).map((id, i) => ({ id, i })).sort((x, y) => score(y.id) - score(x.id) || x.i - y.i)
+    .map(({ id }) => `<li><span>${esc(nameOf(data, id))}${you(id === uid)}</span>${pts(score(id))}</li>`).join('');
+  return `<section aria-label="Points"><h2>Points</h2><ol class="ruled tally">${rows}</ol></section>`;
+}
 
 // `final` stays true after a voided final and at game over: read it only during voting.
 const finalLine = (room) => (room.final && room.phase === 'voting'
-  ? `<p class="final"><b>Final battle, worth ${points(finalPoints(room.score))}.</b> Whoever wins it wins the game.</p>` : '');
+  ? '<p class="final"><b>Final battle!</b> Three of you left. This vote decides the top three.</p>' : '');
 
-const namesRow = (data, label, list, empty) => `<div><dt>${label}</dt><dd>${list.length
-  ? list.map((id) => esc(nameOf(data, id))).join(', ') : `<i>${empty}</i>`}</dd></div>`;
-
-// The Spy bench lists only caught spies, so the scoreboard never points at the active one.
-const scoreboard = (data) => {
+// "+2 Ann", "+1 Ben, Cara": the points a result just gave.
+function gainsLines(data) {
   const { room } = data;
-  return `<section class="scoreboard" aria-label="Scoreboard">
-    <h2>Score</h2>${scoreLine(room.score)}
-    <dl class="ruled pairs board">
-      ${namesRow(data, 'Hero bench', room.heroBench, 'Nobody yet')}
-      ${namesRow(data, 'Spy bench', room.spyBench, 'Nobody yet')}
-      ${namesRow(data, `Still in (${room.seats.length})`, room.seats, 'Nobody')}
-    </dl>
-  </section>`;
-};
+  const { gains } = room.result;
+  const amounts = [...new Set(Object.values(gains))].sort((x, y) => y - x);
+  if (!amounts.length) return '<p class="gains">No points this round.</p>';
+  return amounts.map((n) => `<p class="gains"><b>+${n}</b> ${dealt(room).filter((id) => gains[id] === n).map((id) => esc(nameOf(data, id))).join(', ')}</p>`).join('');
+}
+
+// Every result names that round's carrier and shows both words. `heading` is the h1 tag (h2 under a game-over title).
+function verdict(data, heading = 'h1') {
+  const { room } = data;
+  const r = room.result;
+  const out = esc(r.outName ?? nameOf(data, r.outUid));
+  const hiding = `<p class="verdict">The virus was hiding in <b>${esc(r.carrierName ?? nameOf(data, r.carrierUid))}</b>.</p>`;
+  const head = r.voided ? `<b>${out}</b> left. This round doesn't count.`
+    : r.wasCarrier ? `<b>${out}</b> had the virus! ${out} is cured.`
+    // In the final nobody is sent to rest: the three of them make the podium.
+    : `<b>${out}</b> was healthy${room.phase === 'gameOver' ? '' : ' and is sent to rest'}.`;
+  return `<${heading} class="reveal">${head}</${heading}>${r.wasCarrier ? '' : hiding}${wordsList(r)}${gainsLines(data)}`;
+}
 
 // Only phones other than the host's say this: the host's own trouble shows as its run error.
 const stallLine = (s) => {
@@ -106,43 +118,29 @@ const stallLine = (s) => {
     ? `<p class="stall" role="status">Waiting for ${esc(room.gmName)}'s phone. Ask them to open the game.</p>` : '';
 };
 
-function verdict(data) {
-  const r = data.room.result;
-  const spyName = r.spyName && `<b>${esc(r.spyName)}</b>`;
-  if (r.voided) {
-    const who = r.outName ?? r.spyName;
-    const head = `<h1>${who ? `<b>${esc(who)}</b>` : 'A player'} left. This round doesn't count.</h1>`;
-    return spyName ? `${head}<p class="verdict">${spyName} ${spyTag} was the spy.</p>${wordsList(r)}` : head;
-  }
-  const out = `<b>${esc(r.outName ?? nameOf(data, r.outUid))}</b>`;
-  // A non-spy result carries no words and no spy: that word set goes on.
-  return r.wasSpy
-    ? `<h1>${out} was the spy! Heroes +${r.points}.</h1>${wordsList(r)}`
-    : `<h1>${out} was not the spy. Spies +${r.points}.</h1>`;
-}
+const ordinal = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th')}`;
 
-function gameOver(data) {
+// Reads the ranking stored with the result; never works it out again.
+function gameOver({ uid, data }) {
   const { room } = data;
-  const r = room.result ?? {};
-  const head = { heroes: 'Heroes win!', spies: 'Spies win!', draw: "It's a draw" }[room.winner] ?? 'Game over';
-  const t = teams({ ...room, active: room.seats, spyUid: r.spyUid ?? null });
-  const won = (team) => (room.winner === team ? ' <i>(winners)</i>' : '');
-  // points > 0 only when a final vote wrote this result; endGame keeps an older outName with 0 points.
-  const out = r.outName && r.points > 0 ? esc(r.outName) : null;
-  return `<section class="result"><h1>${head}</h1>${scoreLine(room.score)}
-    ${out ? `<p class="verdict"><b>${out}</b> was voted out and ${r.wasSpy ? 'was the spy!' : 'was not the spy.'}</p>` : ''}
-    ${r.spyName ? `<p class="verdict">The last spy was <b>${esc(r.spyName)}</b> ${spyTag}</p>` : ''}
-    ${r.common ? wordsList(r) : ''}
-    <h2>Heroes team${won('heroes')}</h2>${nameList(data, t.heroes, 'Nobody')}
-    <h2>Spies team${won('spies')}</h2>${nameList(data, t.spies, 'Nobody')}</section>`;
+  const list = room.ranking ?? [];
+  const hadFinal = list.some((e) => e.group === 'podium');
+  const group = (g, title) => {
+    const rows = list.filter((e) => e.group === g);
+    return rows.length ? `${title ? `<h2>${title}</h2>` : ''}<ol class="ruled ranking ${g}">${rows.map((e) => `<li><span class="place">${ordinal(e.place)}</span><span class="who">${esc(e.name ?? nameOf(data, e.uid))}${you(e.uid === uid)}</span>${pts(e.points)}</li>`).join('')}</ol>` : '';
+  };
+  const head = !hadFinal ? 'Not enough players left.' : room.result?.wasCarrier ? 'The Heroes caught the virus!' : 'The virus got away!';
+  return `<section class="result"><h1>${head}</h1>
+    ${hadFinal && room.result ? verdict(data, 'h2') : ''}
+    ${group('podium', 'Top three')}${group('out', hadFinal ? 'Voted out' : '')}${group('gone', 'Did not finish')}</section>`;
 }
 
-// Removing a seated player mid-vote voids the round, so those rows ask first. The host cannot remove themselves.
+// Removing a player still in the game mid-vote voids the round, so those rows ask first. The host cannot remove themselves.
 function removeList({ uid, data, ui }) {
   const { room } = data;
-  const asks = (id) => room.phase === 'voting' && room.seats.includes(id);
-  // Seats too: a seated player who left has no record any more but still holds up the round.
-  const ids = [...new Set([...data.players.map((p) => p.uid), ...room.seats])].filter((id) => id !== uid);
+  const asks = (id) => room.phase === 'voting' && room.inGame.includes(id);
+  // inGame too: a player who left has no record any more but still holds up the round.
+  const ids = [...new Set([...data.players.map((p) => p.uid), ...room.inGame])].filter((id) => id !== uid);
   const rows = ids.map((id) => ({ uid: id, name: nameOf(data, id) })).map((p) => (ui.confirmRemove === p.uid && asks(p.uid)
     ? `<li class="confirm"><span>Remove ${esc(p.name)}? This round won't count.</span>
         <span class="row-actions">${btn('Yes, remove', 'remove', { arg: p.uid, kind: 'danger small', disabled: ui.busy })}${btn('Keep', 'cancelRemove', { kind: 'secondary small' })}</span></li>`
@@ -174,10 +172,14 @@ function voteStatus(s) {
   return waitLine(s, myVote ? '<b>Vote sent.</b> ' : '');
 }
 
+// The same words whether the virus stays or jumps: no phone knows which.
 function nextLine(room) {
-  const left = room.seats.length;
-  return left < 3 ? 'The game ends in a moment.' : left === 3 ? 'The final battle starts in a moment.' : 'Next round starts in a moment.';
+  const left = room.inGame.length;
+  if (left < 3) return 'The game ends in a moment.';
+  return `The virus is on the move. ${left === 3 ? 'The final battle starts in a moment.' : 'Next round starts in a moment.'}`;
 }
+
+const story = '<p class="story">A virus is hiding in one of you. Find it before it moves on.</p>';
 
 const screens = {
   loading: () => '<p class="status" role="status">Loading the room…</p>',
@@ -197,6 +199,7 @@ const screens = {
     ${btn('Create a room', 'create', { kind: 'secondary', disabled: ui.busy })}`,
 
   waiting: (s) => `<h1>You're in!</h1>
+    ${story}
     <p>Waiting for ${esc(s.data.room.gmName)} to start the game.</p>
     ${playerList(s)}`,
 
@@ -212,8 +215,9 @@ const screens = {
     const handOver = others.length ? `<details class="manage" data-open="openHandOver"${ui.openHandOver ? ' open' : ''}><summary>Hand the room to someone else</summary>
       <p class="hint">Their phone runs the room from then on, and they get the New game button.</p>
       <ul class="ruled">${others.map((p) => `<li>${btn(`Give the room to ${esc(p.name)}`, 'handOver', { arg: p.uid, kind: 'choice', disabled: ui.busy })}</li>`).join('')}</ul></details>` : '';
-    return `${over ? gameOver(data) : ''}
+    return `${over ? gameOver({ uid, data }) : ''}
       <section class="room-code">${over ? '<h2 class="label">Room code</h2>' : '<h1 class="label">Room code</h1>'}<p class="big">${esc(code)}</p><p>Read it out loud so players can join.</p></section>
+      ${over ? '' : story}
       <h2>Players (${players.length})</h2>
       <ol class="ruled numbered">${rows}</ol>
       ${btn('New game', 'newGame', { disabled: short || ui.busy, extra: short ? ' aria-describedby="why-not"' : '' })}
@@ -224,7 +228,7 @@ const screens = {
     : `${btn('Leave room', 'leave', { kind: 'link' })}<p class="hint">Nobody else is here, so leaving deletes this room.</p>`}`;
   },
 
-  // Seated, voting. Nothing here depends on who the spy is: only the word text differs.
+  // In the game, voting. Nothing here depends on who carries the virus: only the word text differs.
   vote: (s) => {
     const { uid, data } = s;
     // The order and the vote are one list: every other name is a vote button until this phone has voted.
@@ -234,34 +238,34 @@ const screens = {
     ${finalLine(data.room)}
     ${voteStatus(s)}
     <h2>Speaking order</h2>
-    <p class="hint">Say one clue each, in this order. Don't say your word!${canVote ? ' Then tap who you think is the spy. You can only vote once.' : ''}</p>
+    <p class="hint">Say one clue each, in this order. Don't say your word!${canVote ? ' Then tap who you think has the virus. You can only vote once.' : ''}</p>
     <ol class="ruled numbered order">${data.room.roundPlayers.map((id) => `<li>${canVote && id !== uid
     ? btn(esc(nameOf(data, id)), 'vote', { arg: id, kind: 'choice', disabled: s.ui.busy, extra: ` aria-label="Vote for ${esc(nameOf(data, id))}"` })
     : `<span>${esc(nameOf(data, id))}${you(id === uid)}</span>`}</li>`).join('')}</ol>
     ${errorLine(s.ui.error)}
-    ${scoreLine(data.room.score)}`;
+    <p class="mine">You have ${pointsText(data.room.points?.[uid] ?? 0)}.</p>`;
   },
 
-  // Benched players see no word, ever: only the scoreboard.
-  bench: (s) => `<h1>You're on the ${bench(s.data.room, s.uid)} bench</h1>
-    <p>You win or lose with your team. Watch the score.</p>
+  // Voted out: no word, ever. Points and who is out.
+  out: (s) => `<h1>You are out.</h1>
+    <p>Watch the Heroes hunt the virus.</p>
     ${waitLine(s)}
-    ${scoreboard(s.data)}`,
+    ${pointsTable(s)}
+    <h2>Out</h2>${nameList(s.data, s.data.room.out)}`,
 
   lateJoiner: (s) => `<h1>A game is in progress. You're in the next one.</h1>${waitLine(s)}`,
 
   result: (s) => {
     const { uid, data } = s;
-    const b = bench(data.room, uid);
-    const playing = data.room.seats.includes(uid);
+    const { room } = data;
+    const playing = room.inGame.includes(uid) || room.out.includes(uid);
     return `<section class="result">${verdict(data)}</section>
-      ${b ? `<p class="you"><b>You're on the ${b} bench.</b></p>` : ''}
-      <p role="status">${playing || b ? nextLine(data.room) : "You're in the next game."}</p>
+      <p class="next" role="status">${playing ? nextLine(room) : "You're in the next game."}</p>
       ${stallLine(s)}
-      ${scoreboard(data)}`;
+      ${pointsTable(s)}`;
   },
 
-  gameOver: ({ data }) => `${gameOver(data)}<p>Waiting for ${esc(data.room.gmName)} to start a new game.</p>`,
+  gameOver: (s) => `${gameOver(s)}<p>Waiting for ${esc(s.data.room.gmName)} to start a new game.</p>`,
 };
 
 export function view(s) {

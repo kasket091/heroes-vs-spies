@@ -196,6 +196,8 @@ export async function startGame(db, code, families, rand = Math.random) {
   const players = (await getDocs(playersQuery(db, code))).docs.map((d) => ({ id: d.id, name: d.data().name }));
   await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
+    // A room from the version before the jumping virus: refuse before reading anything else from it.
+    if (!Array.isArray(room.inGame)) throw new Error('Old room');
     if (room.phase !== 'lobby' && room.phase !== 'gameOver') throw new Error('Round already running');
     if (players.length < MIN_PLAYERS) throw new Error('Not enough players');
     const used = (await tx.get(sub(db, code, 'gm', 'used'))).data()?.keys ?? [];
@@ -284,6 +286,7 @@ export async function closeVoting(db, code, rand = Math.random, round) {
 export async function removePlayer(db, code, uid) {
   await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
+    if (!Array.isArray(room.inGame)) throw new Error('Old room');
     if (uid === room.gmUid) throw new Error('Hand the room over first');
     const playing = room.inGame.includes(uid) && (room.phase === 'voting' || room.phase === 'result');
     if (playing) {
