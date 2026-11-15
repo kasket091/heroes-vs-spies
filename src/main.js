@@ -148,7 +148,8 @@ const actions = {
   remove: (uid) => {
     if (voting() && s.data.room.inGame.includes(uid) && s.ui.confirmRemove !== uid) { s.ui.confirmRemove = uid; update(); return; }
     s.ui.confirmRemove = null;
-    run(() => api.removePlayer(db, s.code, uid));
+    const { phase, round } = s.data.room;
+    run(() => api.removePlayer(db, s.code, uid, phase, round));
   },
   cancelRemove: () => { s.ui.confirmRemove = null; update(); },
   // Host only, during voting: counts the votes cast so far, for this round only (a later round is left alone).

@@ -200,12 +200,12 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(late).not.toContain('starts in a moment');
     expect(view(st('e', inResult()))).toContain('Next round starts in a moment.');
   });
-  it('result looks the same whether the virus stays or jumps: the page cannot know, and no text says which', () => {
-    const at = (next) => { const s = st('a', inResult()); s.data.secret = { carrierUid: next }; return s; };
-    const stays = view(at('c'));
-    expect(view(at('a'))).toBe(stays);
-    expect(stays).toContain(MOVE);
-    expect(stays).not.toMatch(/jump|stay/i);
+  it('result: one move line, never saying whether the virus stays or jumps', () => {
+    for (const result of [healthy, caught, voided]) {
+      const html = view(st('a', inResult({ result })));
+      expect(html).toContain(MOVE);
+      expect(html).not.toMatch(/jump|stay/i);
+    }
   });
   it('result, stalled after 20 s: the host-phone line, not on the host', () => {
     expect(view(st('a', inResult(), {}, {}, { since: 0, now: 20000 }))).toContain(STALL_LINE);
@@ -478,6 +478,15 @@ describe('view', () => {
     expect(view(st('e', game({ names: { ...dealt, a: '<img src=x>' } })))).not.toContain('<img');
     expect(view(st('a', inResult({ result: { ...healthy, outName: '<img>', carrierName: '<img>', common: '<img>' } })))).not.toContain('<img');
     expect(view(st('a', { ...virusWon, ranking: [rank('a', 1, 1, 'out')].map((e) => ({ ...e, name: '<img>' })) }))).not.toContain('<img');
+  });
+  it('escapes host-written numbers and names in points, gains and places', () => {
+    const bad = '<img src=x>';
+    const html = [
+      view(st('a', inResult({ points: { a: bad, c: 1 }, names: { ...dealt, c: bad }, result: { ...healthy, gains: { c: bad } } }))),
+      view(st('a', game({ points: { a: bad } }), { myWord: 'Cola' })),
+      view(st('a', { ...virusWon, ranking: [{ ...rank('a', bad, bad, 'podium') }] })),
+    ].join('');
+    expect(html).not.toContain('<img');
   });
   it('never shows the stored round number', () => {
     for (const s of [st('gm', game()), st('a', game(), { myWord: 'Cola' }), st('e', game()), st('a', inResult())]) expect(view(s)).not.toMatch(/Round 7|>7</);

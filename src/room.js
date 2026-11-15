@@ -283,11 +283,14 @@ export async function closeVoting(db, code, rand = Math.random, round) {
 }
 
 // Host only: voiding a round needs the secret and a room update. The host cannot remove themselves.
-export async function removePlayer(db, code, uid) {
+// `phase` and `round`, when given, are what the screen saw: a room that moved on (a result that became the next vote)
+// is left alone, so the host taps again and is asked first.
+export async function removePlayer(db, code, uid, phase, round) {
   await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     if (!Array.isArray(room.inGame)) throw new Error('Old room');
     if (uid === room.gmUid) throw new Error('Hand the room over first');
+    if (round != null && (room.round !== round || room.phase !== phase)) return;
     const playing = room.inGame.includes(uid) && (room.phase === 'voting' || room.phase === 'result');
     if (playing) {
       const update = { inGame: room.inGame.filter((id) => id !== uid), gone: [...room.gone, uid] };

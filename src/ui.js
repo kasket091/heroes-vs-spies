@@ -69,7 +69,7 @@ const wordsList = (r, more = '') => `<dl class="ruled pairs">
   <div><dt>Healthy word</dt><dd>${esc(r.common)}</dd></div>
   <div><dt>Virus word</dt><dd>${esc(r.odd)}</dd></div>${more}</dl>`;
 
-const pointsText = (n) => `<b>${n}</b> point${n === 1 ? '' : 's'}`;
+const pointsText = (n) => `<b>${esc(n)}</b> point${n === 1 ? '' : 's'}`;
 const pts = (n) => `<span class="pts">${pointsText(n)}</span>`;
 
 // Everyone dealt into this game, in a fixed order: still in, voted out, removed.
@@ -95,7 +95,7 @@ function gainsRows(data) {
   const { gains } = room.result;
   return [...new Set(Object.values(gains))].sort((x, y) => y - x).map((n) => {
     const who = dealt(room).filter((id) => gains[id] === n);
-    return `<div><dt><b>+${n}</b> point${n === 1 ? '' : 's'}${who.length > 1 ? ' each' : ''}</dt><dd>${who.map((id) => esc(nameOf(data, id))).join(', ')}</dd></div>`;
+    return `<div><dt><b>+${esc(n)}</b> point${n === 1 ? '' : 's'}${who.length > 1 ? ' each' : ''}</dt><dd>${who.map((id) => esc(nameOf(data, id))).join(', ')}</dd></div>`;
   }).join('');
 }
 
@@ -129,7 +129,7 @@ function gameOver({ uid, data }) {
   const hadFinal = list.some((e) => e.group === 'podium');
   const group = (g, title) => {
     const rows = list.filter((e) => e.group === g);
-    return rows.length ? `${title ? `<h2>${title}</h2>` : ''}<ol class="ruled ranking ${g}">${rows.map((e) => `<li><span class="place">${ordinal(e.place)}</span><span class="who">${esc(e.name ?? nameOf(data, e.uid))}${you(e.uid === uid)}</span>${pts(e.points)}</li>`).join('')}</ol>` : '';
+    return rows.length ? `${title ? `<h2>${title}</h2>` : ''}<ol class="ruled ranking ${g}">${rows.map((e) => `<li><span class="place">${esc(ordinal(e.place))}</span><span class="who">${esc(e.name ?? nameOf(data, e.uid))}${you(e.uid === uid)}</span>${pts(e.points)}</li>`).join('')}</ol>` : '';
   };
   const head = !hadFinal ? 'Not enough players left.' : room.result?.wasCarrier ? 'The Heroes caught the virus!' : 'The virus got away!';
   return `<section class="result"><h1>${head}</h1>

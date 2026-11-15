@@ -4,10 +4,10 @@ export const MIN_PLAYERS = 4;
 const pick = (list, rand) => list[Math.floor(rand() * list.length)];
 
 // A starter is safe when the carrier speaks 3rd or later.
-export function safeStarters(playerIds, spyId) {
+export function safeStarters(playerIds, carrierId) {
   const n = playerIds.length;
-  const spy = playerIds.indexOf(spyId);
-  return playerIds.filter((_, i) => (((spy - i) % n) + n) % n >= 2);
+  const carrier = playerIds.indexOf(carrierId);
+  return playerIds.filter((_, i) => (((carrier - i) % n) + n) % n >= 2);
 }
 
 export function speakingOrder(playerIds, starterId) {

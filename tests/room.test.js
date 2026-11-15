@@ -909,6 +909,25 @@ describe('room data layer', () => {
     await expect(castVote(u.p1.db, code, u.p1.uid, u.p2.uid)).rejects.toThrow('Not in this round');
   });
 
+  it('removePlayer with the phase and round the screen saw: a result that moved on to the next vote is left alone; a mid-vote removal still cancels', async () => {
+    const code = await lobby(5);
+    const { room, secret } = await deal(code, LAST_CARRIER);
+    await playRound(code, hero(room, secret));
+    const seen = await rawRoom(code, 'h');
+    expect(seen.phase).toBe('result');
+    await advance(u.h.db, code, FAM, Math.random, seen.round);
+    const next = await rawRoom(code, 'h');
+    expect(next).toMatchObject({ phase: 'voting', round: seen.round + 1 });
+    const target = next.inGame.find((x) => x !== u.h.uid);
+    await removePlayer(u.h.db, code, target, 'result', seen.round);
+    expect(await rawRoom(code, 'h')).toEqual(next);
+    expect((await getDoc(doc(u.h.db, 'rooms', code, 'players', target))).exists()).toBe(true);
+    await removePlayer(u.h.db, code, target, 'voting', next.round);
+    const after = await rawRoom(code, 'h');
+    expect(after).toMatchObject({ phase: 'result', result: { outUid: target, voided: true } });
+    expect(after.gone).toContain(target);
+  });
+
   it('removePlayer of the host rejects Hand the room over first', async () => {
     const code = await lobby(4);
     await expect(removePlayer(u.h.db, code, u.h.uid)).rejects.toThrow('Hand the room over first');

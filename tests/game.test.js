@@ -6,13 +6,13 @@ const P = ['a', 'b', 'c', 'd', 'e'];
 test('MIN_PLAYERS is 4', () => {
   expect(MIN_PLAYERS).toBe(4);
 });
-test('safeStarters leaves 2 speakers before the spy', () => {
-  expect(safeStarters(P, 'c')).toEqual(['a', 'd', 'e']);   // not b (spy 2nd), not c (spy 1st)
+test('safeStarters leaves 2 speakers before the carrier', () => {
+  expect(safeStarters(P, 'c')).toEqual(['a', 'd', 'e']);   // not b (carrier 2nd), not c (carrier 1st)
   expect(safeStarters(['a', 'b', 'c', 'd'], 'a')).toEqual(['b', 'c']);
 });
-test('every safe starter puts the spy 3rd or later, for every spy', () => {
-  for (const spy of P) for (const s of safeStarters(P, spy))
-    expect(speakingOrder(P, s).indexOf(spy)).toBeGreaterThanOrEqual(2);
+test('every safe starter puts the carrier 3rd or later, for every carrier', () => {
+  for (const carrier of P) for (const s of safeStarters(P, carrier))
+    expect(speakingOrder(P, s).indexOf(carrier)).toBeGreaterThanOrEqual(2);
 });
 test('speakingOrder wraps around', () => {
   expect(speakingOrder(P, 'd')).toEqual(['d', 'e', 'a', 'b', 'c']);
