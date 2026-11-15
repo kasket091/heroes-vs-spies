@@ -121,18 +121,20 @@ describe('room cleanup rules', () => {
     await assertFails(newPlayer(31));
     await assertSucceeds(newPlayer(29));
   });
-  it('player update: name with expiresAt unchanged succeeds, changing expiresAt FAILS', async () => {
+  it('player update: a rename succeeds; a new expiresAt succeeds only when 1 to 30 days ahead', async () => {
     const ref = db('p5').doc('rooms/ABCD/players/p5');
     await assertSucceeds(newPlayer(7));
-    const { expiresAt } = (await ref.get()).data();
-    await assertFails(ref.update({ expiresAt: ahead(20) }));
-    await assertSucceeds(ref.update({ name: 'Evie', expiresAt }));
+    await assertFails(ref.update({ expiresAt: ahead(60) }));
+    await assertFails(ref.update({ expiresAt: ahead(0.5) }));
+    await assertSucceeds(ref.update({ expiresAt: ahead(20) }));
+    await assertSucceeds(ref.update({ name: 'Evie', expiresAt: (await ref.get()).data().expiresAt }));
     await assertSucceeds(ref.update({ name: 'Eva' }));
   });
-  it('player doc without expiresAt (older): rename succeeds, adding expiresAt FAILS', async () => {
+  it('player doc without expiresAt (older): rename succeeds, a valid new expiresAt succeeds, a 60-day one FAILS', async () => {
     const ref = db('p1').doc('rooms/ABCD/players/p1');
-    await assertFails(ref.update({ expiresAt: ahead(7) }));
+    await assertFails(ref.update({ expiresAt: ahead(60) }));
     await assertSucceeds(ref.update({ name: 'New' }));
+    await assertSucceeds(ref.update({ expiresAt: ahead(7) }));
   });
   it('vote: 7 days ahead succeeds, 60 days ahead FAILS, in the past FAILS', async () => {
     await assertFails(vote(60));
@@ -152,6 +154,17 @@ describe('room cleanup rules', () => {
     b.set(d.doc('rooms/ABCD/players/gm'), { name: 'GM', joinedAt: now(), expiresAt: ahead(7) });
     await assertSucceeds(b.commit());
   });
+  it('player and vote create: 12 hours ahead FAILS, 2 days ahead succeeds', async () => {
+    await assertFails(newPlayer(0.5));
+    await assertSucceeds(newPlayer(2));
+    await assertFails(vote(0.5));
+    await assertSucceeds(vote(2));
+  });
+  it('gm deletes gm/secret succeeds, gm/lock FAILS', async () => {
+    await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD/gm/lock').set({ expiresAt: ahead(40) }));
+    await assertFails(db('gm').doc('rooms/ABCD/gm/lock').delete());
+    await assertSucceeds(db('gm').doc('rooms/ABCD/gm/secret').delete());
+  });
   it('player create without expiresAt (older page) succeeds', () => assertSucceeds(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now() })));
   it('vote without expiresAt (older page) succeeds', () => assertSucceeds(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'p2', round: 1 })));
 
@@ -159,6 +172,7 @@ describe('room cleanup rules', () => {
     const newRoom = (who, code, extra = {}) => db(who).doc(`rooms/${code}`).set({ ...room, gmUid: who, ...extra });
     it('room create: future succeeds, past FAILS, absent succeeds', async () => {
       await assertFails(newRoom('p5', 'AAAA', { expiresAt: ahead(-1) }));
+      await assertFails(newRoom('p5', 'AAAA', { expiresAt: ahead(1 / 24) }));
       await assertFails(newRoom('p5', 'AAAA', { expiresAt: 5 }));
       await assertSucceeds(newRoom('p5', 'AAAA', { expiresAt: ahead(1) }));
       await assertSucceeds(newRoom('p6', 'BBBB'));
@@ -166,6 +180,7 @@ describe('room cleanup rules', () => {
     it('room update by the game master: future succeeds, past FAILS, absent succeeds', async () => {
       const ref = db('gm').doc('rooms/ABCD');
       await assertFails(ref.update({ expiresAt: ahead(-2) }));
+      await assertFails(ref.update({ expiresAt: ahead(1 / 24) }));
       await assertSucceeds(ref.update({ expiresAt: ahead(1) }));
       await assertSucceeds(ref.update({ round: 2 }).then(() => ref.update({ phase: 'voting' })));
     });

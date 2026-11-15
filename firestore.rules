@@ -5,13 +5,14 @@ service cloud.firestore {
     function roomDoc(code) { return get(/databases/$(database)/documents/rooms/$(code)).data; }
     function isGm(code) { return signedIn() && roomDoc(code).gmUid == request.auth.uid; }
 
-    // Phones send their own clock + 7 days; 30 days of room covers a clock up to 7 days slow or 23 days fast.
-    function validExpiry(t) { return t is timestamp && t > request.time && t < request.time + duration.value(30, 'd'); }
+    // Phones send their own clock + 7 days; between 1 and 30 days ahead covers a clock up to 6 days slow or 23 days fast.
+    // The lower bound keeps a record from expiring within hours of being written.
+    function validExpiry(t) { return t is timestamp && t > request.time + duration.value(1, 'd') && t < request.time + duration.value(30, 'd'); }
 
     // expiresAt is optional so pages opened before this rule keep working; when present it must be sane.
     function optionalExpiry(d) { return !('expiresAt' in d) || validExpiry(d.expiresAt); }
-    // A room's own expiresAt only has to be in the future (a game master with a slow clock must not write one already gone).
-    function roomExpiry(d) { return !('expiresAt' in d) || (d.expiresAt is timestamp && d.expiresAt > request.time); }
+    // A room's own expiresAt must be more than 12 hours ahead (a game master with a slow clock must not write one about to go).
+    function roomExpiry(d) { return !('expiresAt' in d) || (d.expiresAt is timestamp && d.expiresAt > request.time + duration.value(12, 'h')); }
 
     match /rooms/{code} {
       allow get: if signedIn();
@@ -36,8 +37,9 @@ service cloud.firestore {
           && getAfter(/databases/$(database)/documents/rooms/$(code)).data.gmUid != uid;
         allow update: if signedIn() && request.auth.uid == uid && validName()
           && request.resource.data.joinedAt == resource.data.joinedAt
-          // get(): a player doc written before expiry existed has none, and keeps having none.
-          && request.resource.data.get('expiresAt', null) == resource.data.get('expiresAt', null);
+          // Unchanged (a rename; get() so a doc written before expiry existed may have none), or a new valid expiry.
+          && (request.resource.data.get('expiresAt', null) == resource.data.get('expiresAt', null)
+            || ('expiresAt' in request.resource.data && validExpiry(request.resource.data.expiresAt)));
         allow delete: if signedIn() && (request.auth.uid == uid || isGm(code));
       }
 
@@ -47,7 +49,9 @@ service cloud.firestore {
       }
 
       match /gm/{docId} {
-        allow read, write: if isGm(code);
+        allow read, create, update: if isGm(code);
+        // The lock keeps a used code from being created again: not even the game master may delete it.
+        allow delete: if isGm(code) && docId != 'lock';
       }
 
       match /votes/{id} {

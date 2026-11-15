@@ -38,6 +38,7 @@ const s = {
 let unsubscribe = () => {};
 let closingRound = null;
 let checked = false;
+let touched = null;
 
 let last = null;
 const update = () => {
@@ -78,6 +79,7 @@ function openRoom(code) {
       if (!inRoom && !old) { leaveRoom(); return; }
     }
     s.data = data;
+    if (touched !== code && data.players.some((p) => p.uid === s.uid)) { touched = code; api.touchPlayer(db, code, s.uid); }
     autoClose(data);
     update();
   });

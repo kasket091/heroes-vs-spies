@@ -1,6 +1,6 @@
 import {
   doc, collection, query, orderBy, getDoc, getDocs, setDoc, deleteDoc, onSnapshot,
-  writeBatch, runTransaction, serverTimestamp, where, Timestamp,
+  writeBatch, runTransaction, updateDoc, serverTimestamp, where, Timestamp,
 } from 'firebase/firestore';
 import {
   MIN_PLAYERS, starterChoices, speakingOrder, pickSpy, validPair, cleanName, newRoomCode,
@@ -42,12 +42,14 @@ async function getRoom(db, code) {
   return snap.data();
 }
 
-export async function createRoom(db, uid, rawName) {
+export async function createRoom(db, uid, rawName, nextCode = newRoomCode) {
   const gmName = cleanName(rawName);
   if (!gmName) throw new Error('Name needed');
   // A refused create is a code whose lock still exists (the rules hide it from us) or a past expiresAt: after a few tries, blame the clock.
   for (let refused = 0; ; ) {
-    const code = newRoomCode();
+    const code = nextCode();
+    // Records with no expiresAt (older pages) can outlive a room and its lock: never build a room on leftovers.
+    if (!(await getDocs(collection(db, 'rooms', code, 'players'))).empty) continue;
     let ok;
     try {
       ok = await runTransaction(db, async (tx) => {
@@ -131,7 +133,8 @@ export function subscribe(db, code, uid, onState) {
     // Errors are ignored: a listener can race a hand-over and lose read access.
     if (isGm) {
       const q = query(collection(db, 'rooms', code, 'votes'), where('round', '==', room.round));
-      voteOff = onSnapshot(q, (d) => { s.votes = d.docs.map((x) => x.data()); emit(); }, () => {});
+      // Only votes from this round's players count: a leftover vote doc (id round_uid) from a stranger is ignored.
+      voteOff = onSnapshot(q, (d) => { s.votes = d.docs.filter((x) => s.room?.roundPlayers?.includes(x.id.split('_')[1])).map((x) => x.data()); emit(); }, () => {});
     } else {
       voteOff = onSnapshot(sub(db, code, 'votes', `${room.round}_${uid}`), (d) => { s.myVote = d.exists() ? d.data().target : null; emit(); }, () => { s.myVote = null; emit(); });
     }
@@ -313,6 +316,12 @@ export async function removePlayer(db, code, uid) {
   });
 }
 
+// Gives a player's own doc a fresh expiry, so a room used for more than 7 days keeps its players.
+// A refusal or a missing doc is ignored: the doc just keeps the expiry it has.
+export async function touchPlayer(db, code, uid) {
+  try { await updateDoc(sub(db, code, 'players', uid), recordTtl()); } catch { /* keeps the old expiry */ }
+}
+
 export const leaveRoom = (db, code, uid) => deleteDoc(sub(db, code, 'players', uid));
 
 export async function handOverGm(db, code, newGmUid) {
@@ -328,10 +337,10 @@ export async function handOverGm(db, code, newGmUid) {
   await asGm(() => batch.commit());
 }
 
-// Game master only. The rules cannot see the player list, so the check is here, and a read followed by a delete
+// Game master only. The rules cannot see the player list, so the check is here. A read followed by a delete
 // cannot be made atomic under these rules: worst case, a player joins in the gap and finds the room gone.
-// The lock record stays, so the code cannot be re-created while leftovers can exist. The check is here: a room with players
-// (or a game in progress) is left alone. Returns whether the room was deleted.
+// The lock record stays, so the code cannot be re-created while leftovers can exist.
+// A room with players (or a game in progress) is left alone. Returns whether the room was deleted.
 export async function deleteRoom(db, code) {
   const room = await getDoc(roomRef(db, code));
   if (!room.exists() || !['lobby', 'gameOver'].includes(room.data().phase)) return false;

@@ -2,11 +2,11 @@ import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { deleteApp } from 'firebase/app';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
-import { starterChoices } from '../src/game.js';
+import { starterChoices, newRoomCode } from '../src/game.js';
 import { initFirebase, signIn } from '../src/firebase.js';
 import {
   leaveRoom, createRoom, joinRoom, subscribe, dealWords, nextRound, pickStarter, openVoting,
-  castVote, closeVoting, removePlayer, handOverGm, deleteRoom,
+  castVote, closeVoting, removePlayer, handOverGm, deleteRoom, touchPlayer,
 } from '../src/room.js';
 
 const config = { apiKey: 'fake', projectId: 'demo-spy' };
@@ -818,5 +818,40 @@ describe('room cleanup', () => {
       await expect(createRoom(u.gm.db, u.gm.uid, 'Gina')).rejects.toThrow('Bad clock');
     } finally { spy.mockRestore(); }
     expect(await rawRoom(code)).toEqual(before);
+  });
+
+  it('touchPlayer moves a player\'s expiresAt; with no player doc it does nothing and does not throw', async () => {
+    const code = await lobby(1);
+    const before = (await read(code, ['players', u.p1.uid])).expiresAt;
+    await sleep(15);
+    await touchPlayer(u.p1.db, code, u.p1.uid);
+    const after = (await read(code, ['players', u.p1.uid])).expiresAt;
+    expect(after.toMillis()).toBeGreaterThan(before.toMillis());
+    await expect(touchPlayer(u.p2.db, code, u.p2.uid)).resolves.toBeUndefined();
+    expect(await read(code, ['players', u.p2.uid])).toBeUndefined();
+  });
+
+  it('createRoom skips a code that has leftover player docs', async () => {
+    await asAdmin((d) => d.doc('rooms/LEFT/players/ghost').set({ name: 'Ghost', joinedAt: new Date() }));
+    const codes = ['LEFT'];
+    const code = await createRoom(u.gm.db, u.gm.uid, 'Gina', () => codes.shift() ?? newRoomCode());
+    expect(code).not.toBe('LEFT');
+    expect(codes).toEqual([]);
+    expect(await rawRoom('LEFT', 'gm')).toBeUndefined();
+  });
+
+  it('a stale vote from a uid outside roundPlayers does not count toward votesCast', async () => {
+    const code = await lobby(4);
+    await deal(code);
+    const { room, secret } = await clues(code);
+    await pickStarter(u.gm.db, code, firstStarter(room, secret.spyUid));
+    await openVoting(u.gm.db, code);
+    await asAdmin((d) => d.doc(`rooms/${code}/votes/${room.round}_ghost`).set({ target: u.p1.uid, round: room.round }));
+    await castVote(u.p1.db, code, u.p1.uid, u.p2.uid);
+    let last;
+    const off = subscribe(u.gm.db, code, u.gm.uid, (x) => { last = x; });
+    await sleep(800);
+    off();
+    expect(last.votesCast).toBe(1);
   });
 });
