@@ -10,7 +10,7 @@ import {
 export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 export const RECORD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // Firestore deletes a document once its expiresAt has passed (the policy is switched on separately).
-// The phone's clock is used; the rules accept any clock up to 7 days slow or 23 days fast.
+// The phone's clock is used; the rules accept any clock up to 6 days slow (records) or 12 hours slow (the room) and 23 days fast.
 const roomTtl = () => ({ expiresAt: Timestamp.fromMillis(Date.now() + ROOM_TTL_MS) });
 // Outlives every record under a room (the rules cap those at 30 days), so a used room code cannot be created again
 // while leftovers of the old room may still exist. deleteRoom leaves it in place.
@@ -97,7 +97,7 @@ export async function joinRoom(db, code, uid, rawName) {
   } catch (e) {
     if (e.code !== 'permission-denied') throw e;
     // Name and format were checked above, so a refusal means the room is gone, this uid just became the
-    // game master, or (by elimination) the expiry bound: a phone more than 7 days slow.
+    // game master, or (by elimination) the expiry bound: a phone more than 6 days slow.
     const now = (await getDoc(roomRef(db, code))).data();
     if (!now) throw new Error('Room not found');
     if (now.gmUid === uid) return;
@@ -258,7 +258,7 @@ export async function castVote(db, code, uid, target) {
     if (e.code !== 'permission-denied') throw e;
     // The vote is already in (a second tap, a retry): not an error.
     if ((await getDoc(sub(db, code, 'votes', `${round}_${uid}`))).exists()) return;
-    // Refused while the vote is still open for this round: the expiry bound (a phone more than 7 days slow).
+    // Refused while the vote is still open for this round: the expiry bound (a phone more than 6 days slow).
     const now = await getRoom(db, code);
     if (now.phase === 'voting' && now.round === round) throw new Error('Bad clock');
     throw e;

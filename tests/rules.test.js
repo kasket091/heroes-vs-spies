@@ -184,6 +184,13 @@ describe('room cleanup rules', () => {
       await assertSucceeds(ref.update({ expiresAt: ahead(1) }));
       await assertSucceeds(ref.update({ round: 2 }).then(() => ref.update({ phase: 'voting' })));
     });
+    it('room update leaving a near-expiry stamp unchanged succeeds; setting one 1 hour ahead FAILS; 1 day ahead succeeds', async () => {
+      await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD').update({ expiresAt: ahead(1 / 24) }));
+      const ref = db('gm').doc('rooms/ABCD');
+      await assertSucceeds(ref.update({ round: 2 }));
+      await assertFails(ref.update({ expiresAt: ahead(1 / 24 + 0.001) }));
+      await assertSucceeds(ref.update({ expiresAt: ahead(1) }));
+    });
     it('room create is refused while gm/lock exists for the code, allowed when it does not', async () => {
       await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/LOCK/gm/lock').set({ expiresAt: ahead(40) }));
       await assertFails(newRoom('p5', 'LOCK'));

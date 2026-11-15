@@ -20,7 +20,9 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.gmUid == request.auth.uid
         && roomExpiry(request.resource.data)
         && !exists(/databases/$(database)/documents/rooms/$(code)/gm/lock);
-      allow update: if isGm(code) && roomExpiry(request.resource.data);
+      // An unchanged stamp passes: an older page never touches expiresAt, and the merged doc still carries it.
+      allow update: if isGm(code)
+        && (request.resource.data.get('expiresAt', null) == resource.data.get('expiresAt', null) || roomExpiry(request.resource.data));
       allow delete: if isGm(code);
 
       match /players/{uid} {
