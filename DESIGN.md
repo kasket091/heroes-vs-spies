@@ -156,16 +156,16 @@ None beyond the cover band. Each screen shows one thing; the game state decides 
 ### Points
 - Own points: during a vote, a player in the game sees one line, "You have **N** points", under the speaking order. Nobody else's points show during a vote.
 - Points table: an h2 "Points" and a ruled row per player dealt into the game, name on the left and "**N** points" on the right in tabular figures, most points first. On the result screen, the voted-out screen and nowhere during a vote for players still in.
-- Points just earned: one line per amount under the two words, "**+2** Ann", "**+1** Ben, Cara", or "No points this round."
+- Points just earned: label-and-word rows under the two words, in the same list: "**+2** points" Ann, "**+1** point each" Ben, Cara (long name lists wrap beside the label, not under it), or the line "No points this round."
 
 ### Reveal
-Every result: an h1 naming who went out ("Ben was healthy and is sent to rest.", "Cara had the virus! Cara is cured.", "Ben left. This round doesn't count."), "The virus was hiding in **Cara**." when it was someone else, then the two words as label-and-word rows ("Healthy word", "Virus word"), then the points just earned, then one bold line: "The virus is on the move. Next round starts in a moment." The same line whether the virus stays or moves; it is left out when the game is ending.
+Every result: an h1 naming who went out ("Ben was healthy and is sent to rest.", "Cara had the virus! Cara is cured.", "Ben left. This round doesn't count."), "The virus was hiding in **Cara**." when it was someone else or the round was cancelled, then the two words as label-and-word rows ("Healthy word", "Virus word"), then the points just earned, then one bold line: "The virus is on the move. Next round starts in a moment." The same line whether the virus stays or moves; it is left out when the game is ending.
 
 ### Ranking
 Game over: an h1 for how it ended ("The virus got away!", "The Heroes caught the virus!", or "Not enough players left."), the final's reveal under an h2, then the stored ranking as ruled rows of place ("1st", level places share the number), name and points. "Top three" sits on a 2px rule-strong line with larger bold rows; "Voted out" and "Did not finish" follow in body size. With no final there is no "Top three" and the first group has no heading.
 
 ### Final battle note
-A white box with a 2px cobalt outline: "**Final battle!** Three of you left. This vote decides the top three." Shown during the final vote only, identical for every player.
+A white box with a 2px cobalt outline: "**Final battle!** Three of you left. This vote decides the top three." for the three in it, "Three players left." on the voted-out and late-joiner screens. Shown during the final vote only, identical for the three players in it.
 
 ## Do's and Don'ts
 

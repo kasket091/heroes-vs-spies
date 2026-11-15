@@ -117,7 +117,7 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(html).toMatch(/The virus was hiding in <b>Cara<\/b>\./);
     expect(html).not.toContain('sent to rest');
     expect(html).not.toContain(MOVE);
-    for (const t of ['Cola', 'Water', '+4']) expect(html).toContain(t);
+    for (const t of ['Cola', 'Water', '<dt><b>+4</b> points</dt><dd>Cara</dd>']) expect(html).toContain(t);
     expect(rowsOf(section(html, 'class="ruled ranking podium"', '</ol>'))).toEqual(['1st Cara 6 points', '2nd Ann 3 points', '3rd Gina 1 point']);
     expect(rowsOf(section(html, 'class="ruled ranking out"', '</ol>'))).toEqual(['4th Ben 2 points', '4th Eli (you) 2 points']);
     const gone = section(html, 'class="ruled ranking gone"', '</ol>');
@@ -132,7 +132,7 @@ describe('screenFor: one test per row of the screen table', () => {
     const html = view(st('a', heroesWon));
     expect(html).toContain('The Heroes caught the virus!');
     expect(html).toMatch(/Cara<\/b> had the virus! Cara is cured\./);
-    expect(html).toContain('<b>+1</b> Ann, Gina');
+    expect(html).toContain('<dt><b>+1</b> point each</dt><dd>Ann, Gina</dd>');
     expect(rowsOf(section(html, 'class="ruled ranking podium"', '</ol>'))).toEqual(['1st Ann (you) 3 points', '1st Gina 3 points', '3rd Cara 2 points']);
   });
   it('gameOver with no final: "Not enough players left.", everyone by place, nobody called voted out', () => {
@@ -158,14 +158,14 @@ describe('screenFor: one test per row of the screen table', () => {
   it('result, carrier caught: who had it and is cured, both words, the +1s, the move line, the points table', () => {
     const html = view(st('a', inResult({ result: caught, inGame: ['a', 'b', 'gm', 'f'], out: ['e', 'c'] })));
     expect(html).toMatch(/Cara<\/b> had the virus! Cara is cured\./);
-    for (const t of ['Cola', 'Water', '<b>+1</b> Ann, Ben', `${MOVE} Next round starts in a moment.`]) expect(html).toContain(t);
+    for (const t of ['Cola', 'Water', '<dt><b>+1</b> point each</dt><dd>Ann, Ben</dd>', `${MOVE} Next round starts in a moment.`]) expect(html).toContain(t);
     expect(html.indexOf('Cara</b> had the virus')).toBeLessThan(html.indexOf('<h2>Points</h2>'));
   });
   it('result, a healthy Hero voted out: sent to rest, where the virus was hiding, the +2', () => {
     const html = view(st('a', inResult()));
     expect(html).toMatch(/Ben<\/b> was healthy and is sent to rest\./);
     expect(html).toMatch(/The virus was hiding in <b>Cara<\/b>\./);
-    for (const t of ['Cola', 'Water', '<b>+2</b> Cara', MOVE]) expect(html).toContain(t);
+    for (const t of ['Cola', 'Water', '<dt><b>+2</b> points</dt><dd>Cara</dd>', MOVE]) expect(html).toContain(t);
   });
   it('result, cancelled: who left, it does not count, where the virus was hiding, both words, no points', () => {
     const html = view(st('a', inResult({ result: voided })));
@@ -173,6 +173,12 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(html).toMatch(/The virus was hiding in <b>Cara<\/b>\./);
     for (const t of ['Cola', 'Water', 'No points this round.', MOVE]) expect(html).toContain(t);
     expect(html).not.toMatch(/<b>\+\d/);
+  });
+  it('result, cancelled because the carrier left: still names the carrier and shows both words', () => {
+    const html = view(st('a', inResult({ result: { ...voided, outUid: 'c', outName: 'Cara', wasCarrier: true } })));
+    expect(html).toMatch(/Cara<\/b> left\. This round doesn't count\./);
+    expect(html).toMatch(/The virus was hiding in <b>Cara<\/b>\./);
+    for (const t of ['Cola', 'Water', 'No points this round.']) expect(html).toContain(t);
   });
   it('result: the points table lists everyone dealt in, most points first, with their points', () => {
     const html = view(st('a', inResult({ points: { gm: 0, a: 1, b: 2, c: 2, e: 2, f: 0 } })));
@@ -225,7 +231,7 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(html).toContain('Watch the Heroes hunt the virus.');
     expect(html).toContain('Waiting for: Cara');
     expect(html).toContain('<h2>Points</h2>');
-    expect(rowsOf(section(html, '<h2>Out</h2>', '</ul>'))).toEqual(['Eli', 'Ben']);
+    expect(rowsOf(section(html, '<h2>Out</h2>', '</ul>'))).toEqual(['Eli (you)', 'Ben']);
     expect(html).not.toContain('Cola');
     expect(html).not.toContain('Your word');
     expect(has(html, 'leave')).toBe(true);
@@ -253,6 +259,17 @@ describe('screenFor: one test per row of the screen table', () => {
     const final = game({ final: true, inGame: ['a', 'b', 'gm'], roundPlayers: ['a', 'b', 'gm'] });
     for (const uid of ['a', 'gm']) expect(view(st(uid, final, { myWord: 'Cola' }))).toContain('Final battle');
     expect(view(st('a', inResult({ final: true })))).not.toContain('Final battle');
+  });
+  it('final vote: announced on the voted-out and late-joiner screens too; not in a normal round', () => {
+    const final = game({ final: true, inGame: ['a', 'b', 'gm'], roundPlayers: ['a', 'b', 'gm'], out: ['e', 'c'] });
+    expect(view(st('e', final))).toContain('Final battle!');
+    expect(view(st('d', final))).toContain('Final battle!');
+    expect(view(st('e', game()))).not.toContain('Final battle');
+    expect(view(st('d', game()))).not.toContain('Final battle');
+  });
+  it('voted-out screen: the Out list marks the viewer with (you)', () => {
+    const html = view(st('e', game({ out: ['e', 'b'], inGame: ['a', 'c', 'gm'], roundPlayers: ['a', 'c', 'gm'] })));
+    expect(section(html, '<h2>Out</h2>', '</ul>')).toContain('Eli <i>(you)</i>');
   });
   it('in game, voting, voted: Vote sent, who is left to vote in speaking order, above the order', () => {
     const html = view(st('a', game(), { myWord: 'Cola', myVote: 'b', waiting: ['gm', 'c'] }));

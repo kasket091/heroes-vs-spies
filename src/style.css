@@ -256,8 +256,10 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
 
 /* The reveal: who it was, where the virus hid, both words, then the points just earned */
 .result h2.reveal { margin-top: 1rem; }
-.gains { margin: 0.5rem 0 0; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
-.gains b { display: inline-block; min-width: 2.5rem; }
+.pairs dt b { color: var(--ink); font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.pairs dd { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pairs > div { flex-wrap: nowrap; align-items: baseline; }
+.gains { margin: 0.5rem 0 0; font-size: 1.25rem; }
 .next { margin-top: 1.5rem; font-weight: 700; }
 
 /* Game over: place, name, points. The podium three are written larger, on a stronger rule. */

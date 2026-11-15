@@ -61,13 +61,13 @@ function leaveBlock({ uid, data, ui }) {
     <div class="row-actions">${btn('Yes, leave', 'leave', { kind: 'danger small', disabled: ui.busy })}${btn('Stay', 'stay', { kind: 'secondary small' })}</div></div>`;
 }
 
-const nameList = (data, list, empty = 'Nobody yet') => (list.length
-  ? `<ul class="ruled">${list.map((id) => `<li><span>${esc(nameOf(data, id))}</span></li>`).join('')}</ul>`
+const nameList = (data, list, empty = 'Nobody yet', me = null) => (list.length
+  ? `<ul class="ruled">${list.map((id) => `<li><span>${esc(nameOf(data, id))}${you(id === me)}</span></li>`).join('')}</ul>`
   : `<p class="hint">${empty}</p>`);
 
-const wordsList = (r) => `<dl class="ruled pairs">
+const wordsList = (r, more = '') => `<dl class="ruled pairs">
   <div><dt>Healthy word</dt><dd>${esc(r.common)}</dd></div>
-  <div><dt>Virus word</dt><dd>${esc(r.odd)}</dd></div></dl>`;
+  <div><dt>Virus word</dt><dd>${esc(r.odd)}</dd></div>${more}</dl>`;
 
 const pointsText = (n) => `<b>${n}</b> point${n === 1 ? '' : 's'}`;
 const pts = (n) => `<span class="pts">${pointsText(n)}</span>`;
@@ -85,16 +85,18 @@ function pointsTable({ uid, data }) {
 }
 
 // `final` stays true after a voided final and at game over: read it only during voting.
-const finalLine = (room) => (room.final && room.phase === 'voting'
-  ? '<p class="final"><b>Final battle!</b> Three of you left. This vote decides the top three.</p>' : '');
+// Announced on every phone; `who` is "you" for the three in it, "players" for everyone watching.
+const finalLine = (room, who = 'of you') => (room.final && room.phase === 'voting'
+  ? `<p class="final"><b>Final battle!</b> Three ${who} left. This vote decides the top three.</p>` : '');
 
-// "+2 Ann", "+1 Ben, Cara": the points a result just gave.
-function gainsLines(data) {
+// "+2 points: Ann", "+1 point each: Ben, Cara": the points a result just gave, as rows under the words.
+function gainsRows(data) {
   const { room } = data;
   const { gains } = room.result;
-  const amounts = [...new Set(Object.values(gains))].sort((x, y) => y - x);
-  if (!amounts.length) return '<p class="gains">No points this round.</p>';
-  return amounts.map((n) => `<p class="gains"><b>+${n}</b> ${dealt(room).filter((id) => gains[id] === n).map((id) => esc(nameOf(data, id))).join(', ')}</p>`).join('');
+  return [...new Set(Object.values(gains))].sort((x, y) => y - x).map((n) => {
+    const who = dealt(room).filter((id) => gains[id] === n);
+    return `<div><dt><b>+${n}</b> point${n === 1 ? '' : 's'}${who.length > 1 ? ' each' : ''}</dt><dd>${who.map((id) => esc(nameOf(data, id))).join(', ')}</dd></div>`;
+  }).join('');
 }
 
 // Every result names that round's carrier and shows both words. `heading` is the h1 tag (h2 under a game-over title).
@@ -107,7 +109,7 @@ function verdict(data, heading = 'h1') {
     : r.wasCarrier ? `<b>${out}</b> had the virus! ${out} is cured.`
     // In the final nobody is sent to rest: the three of them make the podium.
     : `<b>${out}</b> was healthy${room.phase === 'gameOver' ? '' : ' and is sent to rest'}.`;
-  return `<${heading} class="reveal">${head}</${heading}>${r.wasCarrier ? '' : hiding}${wordsList(r)}${gainsLines(data)}`;
+  return `<${heading} class="reveal">${head}</${heading}>${r.voided || !r.wasCarrier ? hiding : ''}${wordsList(r, gainsRows(data))}${Object.keys(r.gains).length ? '' : '<p class="gains">No points this round.</p>'}`;
 }
 
 // Only phones other than the host's say this: the host's own trouble shows as its run error.
@@ -249,11 +251,12 @@ const screens = {
   // Voted out: no word, ever. Points and who is out.
   out: (s) => `<h1>You are out.</h1>
     <p>Watch the Heroes hunt the virus.</p>
+    ${finalLine(s.data.room, 'players')}
     ${waitLine(s)}
     ${pointsTable(s)}
-    <h2>Out</h2>${nameList(s.data, s.data.room.out)}`,
+    <h2>Out</h2>${nameList(s.data, s.data.room.out, 'Nobody yet', s.uid)}`,
 
-  lateJoiner: (s) => `<h1>A game is in progress. You're in the next one.</h1>${waitLine(s)}`,
+  lateJoiner: (s) => `<h1>A game is in progress. You're in the next one.</h1>${finalLine(s.data.room, 'players')}${waitLine(s)}`,
 
   result: (s) => {
     const { uid, data } = s;
