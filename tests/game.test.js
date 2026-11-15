@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest';
-import { MIN_PLAYERS, safeStarters, speakingOrder, pickSpy, dealPair, validPair, cleanName, newRoomCode, starterChoices, whoIsOut, finalPoints, scoreRound, stage, gameWinner, teams } from '../src/game.js';
+import { MIN_PLAYERS, safeStarters, speakingOrder, pickSpy, dealPair, validPair, cleanName, newRoomCode, starterChoices, whoIsOut, finalPoints, scoreRound, stage, gameWinner, teams, pairKeys, pickUnusedPair, pickStarter, waitingFor, hostStep, stalled } from '../src/game.js';
+import families from '../words/word-families.json';
 
 const P = ['a', 'b', 'c', 'd', 'e'];
 test('MIN_PLAYERS is 4', () => {
@@ -88,4 +89,56 @@ test('teams', () => {
     .toEqual({ heroes: ['a', 'b'], spies: ['c', 'd'] });
   expect(teams({ active: ['a', 'c'], heroBench: [], spyBench: ['d'], spyUid: null }))
     .toEqual({ heroes: ['a', 'c'], spies: ['d'] });
+});
+
+const F = [['Cola', 'Water', 'Juice', 'Milk'], ['Dog', 'Cat', 'Rabbit', 'Hamster']];
+test('pairKeys: 6 per family of 4', () => {
+  expect(pairKeys(F)).toHaveLength(12);
+  expect(pairKeys(F)[0]).toBe('0:0-1');
+});
+test('pickUnusedPair never repeats, then starts over', () => {
+  let used = []; const seen = new Set();
+  for (let n = 0; n < 12; n += 1) {
+    const r = pickUnusedPair(F, used, Math.random);
+    expect(seen.has(r.key)).toBe(false); seen.add(r.key); used = r.usedKeys;
+  }
+  expect(used).toHaveLength(12);
+  const again = pickUnusedPair(F, used, () => 0);
+  expect(again.usedKeys).toEqual([again.key]);
+});
+test('pickUnusedPair returns two different words of one family', () => {
+  const r = pickUnusedPair(F, [], () => 0);
+  expect(r.key).toBe('0:0-1');
+  expect(r.pair).toEqual(['Cola', 'Water']);
+});
+test('the real list: 378 deals without a repeat', () => {
+  let used = []; const seen = new Set();
+  for (let n = 0; n < 378; n += 1) { const r = pickUnusedPair(families, used); seen.add(r.key); used = r.usedKeys; }
+  expect(seen.size).toBe(378);
+});
+test('pickStarter keeps two speakers ahead of the spy only in a first round of 5 or more', () => {
+  const P5 = ['a', 'b', 'c', 'd', 'e'];
+  for (const r of [0, 0.3, 0.6, 0.99]) expect(['a', 'd', 'e']).toContain(pickStarter(P5, 'c', true, () => r));
+  expect(pickStarter(P5, 'c', false, () => 0.5)).toBe('c');
+  expect(pickStarter(['a', 'b', 'c', 'd'], 'a', true, () => 0)).toBe('a');
+});
+test('waitingFor lists who has not voted this round', () => {
+  const players = [{ uid: 'a', votedRound: 7 }, { uid: 'b', votedRound: 6 }, { uid: 'c' }, { uid: 'x', votedRound: 7 }];
+  expect(waitingFor(['c', 'a', 'b'], players, 7)).toEqual(['c', 'b']);
+});
+test('hostStep', () => {
+  expect(hostStep({ phase: 'voting', allVoted: true, now: 0 })).toBe('close');
+  expect(hostStep({ phase: 'voting', allVoted: false, now: 0 })).toBeNull();
+  expect(hostStep({ phase: 'result', resultAt: 1000, now: 4000 })).toEqual({ wait: 7000 });
+  expect(hostStep({ phase: 'result', resultAt: 1000, now: 11000 })).toBe('advance');
+  expect(hostStep({ phase: 'result', resultAt: 1000, now: 999999 })).toBe('advance');
+  expect(hostStep({ phase: 'lobby', now: 0 })).toBeNull();
+  expect(hostStep({ phase: 'gameOver', now: 0 })).toBeNull();
+});
+test('stalled', () => {
+  expect(stalled({ phase: 'voting', allVoted: true, since: 0, now: 9000 })).toBe(false);
+  expect(stalled({ phase: 'voting', allVoted: true, since: 0, now: 10000 })).toBe(true);
+  expect(stalled({ phase: 'voting', allVoted: false, since: 0, now: 600000 })).toBe(false);
+  expect(stalled({ phase: 'result', since: 0, now: 19000 })).toBe(false);
+  expect(stalled({ phase: 'result', since: 0, now: 20000 })).toBe(true);
 });

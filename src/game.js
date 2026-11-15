@@ -71,3 +71,40 @@ export function newRoomCode(rand = Math.random) {
 }
 
 export const isRoomCode = (code) => new RegExp(`^[${CODE_LETTERS}]{4}$`).test(code);
+
+// Every pair of words inside one family: "<family>:<i>-<j>", i < j.
+export const pairKeys = (families) =>
+  families.flatMap((words, f) => words.flatMap((_, i) => words.slice(i + 1).map((__, k) => `${f}:${i}-${i + 1 + k}`)));
+
+// Random unused pair; once every pair is used the list starts over.
+export function pickUnusedPair(families, usedKeys, rand = Math.random) {
+  const used = new Set(usedKeys);
+  const unused = pairKeys(families).filter((k) => !used.has(k));
+  const key = pick(unused.length ? unused : pairKeys(families), rand);
+  const [f, i, j] = key.split(/[:-]/).map(Number);
+  return { key, pair: [families[f][i], families[f][j]], usedKeys: unused.length ? [...usedKeys, key] : [key] };
+}
+
+export const pickStarter = (seats, spyId, firstRound, rand = Math.random) =>
+  pick(starterChoices(seats, spyId, firstRound), rand);
+
+export const waitingFor = (roundPlayers, players, round) =>
+  roundPlayers.filter((uid) => players.find((p) => p.uid === uid)?.votedRound !== round);
+
+const RESULT_MS = 10000;
+const VOTE_STALL_MS = 10000;
+const RESULT_STALL_MS = 20000;
+
+// What the host's phone does next; every other phone waits.
+export function hostStep({ phase, allVoted, resultAt, now }) {
+  if (phase === 'voting') return allVoted ? 'close' : null;
+  if (phase === 'result') return now - resultAt >= RESULT_MS ? 'advance' : { wait: RESULT_MS - (now - resultAt) };
+  return null;
+}
+
+// True when the host's phone looks stuck, so another phone may step in.
+export function stalled({ phase, allVoted, since, now }) {
+  if (phase === 'voting') return !!allVoted && now - since >= VOTE_STALL_MS;
+  if (phase === 'result') return now - since >= RESULT_STALL_MS;
+  return false;
+}
