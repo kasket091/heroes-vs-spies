@@ -1,4 +1,3 @@
-import { getAuth } from 'firebase/auth';
 import {
   doc, collection, query, orderBy, getDoc, getDocs, setDoc, deleteDoc, onSnapshot,
   writeBatch, runTransaction, updateDoc, serverTimestamp, where, Timestamp,
@@ -241,7 +240,8 @@ export async function advance(db, code, families, rand = Math.random, round) {
 
 // The vote and the "voted in round N" mark on the caller's own record are one write, so they cannot differ.
 export async function castVote(db, code, uid, target) {
-  const { round } = await getRoom(db, code);
+  const { round, roundPlayers } = await getRoom(db, code);
+  if (!roundPlayers.includes(uid)) throw new Error('Not in this round');
   const voteRef = sub(db, code, 'votes', `${round}_${uid}`);
   try {
     const batch = writeBatch(db);
@@ -249,9 +249,12 @@ export async function castVote(db, code, uid, target) {
     batch.update(sub(db, code, 'players', uid), { votedRound: round });
     await batch.commit();
   } catch (e) {
+    if (e.code === 'not-found') throw new Error('Not in this round');
     if (e.code !== 'permission-denied') throw e;
     // The vote is already in (a second tap, a retry): not an error.
     if ((await getDoc(voteRef)).exists()) return;
+    // No player record to mark: this person was removed or left.
+    if (!(await getDoc(sub(db, code, 'players', uid))).exists()) throw new Error('Not in this round');
     // Refused while the vote is still open for this round: the expiry bound (a phone more than 6 days slow).
     const now = await getRoom(db, code);
     if (now.phase === 'voting' && now.round === round) throw new Error('Bad clock');
@@ -319,7 +322,12 @@ export async function touchPlayer(db, code, uid) {
   try { await updateDoc(sub(db, code, 'players', uid), recordTtl()); } catch { /* keeps the old expiry */ }
 }
 
-export const leaveRoom = (db, code, uid) => deleteDoc(sub(db, code, 'players', uid));
+export async function leaveRoom(db, code, uid) {
+  // The host leaves with deleteRoom (alone) or after handing the room over.
+  const room = await getDoc(roomRef(db, code));
+  if (room.exists() && room.data().gmUid === uid) throw new Error('Hand the room over first');
+  await deleteDoc(sub(db, code, 'players', uid));
+}
 
 // Between games only. Both people keep their player records; only who runs the room changes.
 export async function handOverGm(db, code, newGmUid) {
@@ -355,31 +363,40 @@ const RETRY_MS = 5000;
 
 // Host only: runs the room from the host's phone. Safe to run twice and from any phase: every step is a
 // transaction that does nothing unless the room is still where this copy saw it. One timer at most.
-export function runRoom(db, code, families, { now = Date.now, setTimer = setTimeout, rand } = {}) {
+// onError(error) is called once per distinct failing step, onError(null) when a step next succeeds.
+export function runRoom(db, code, uid, families, { now = Date.now, setTimer = setTimeout, rand, onError = () => {} } = {}) {
   let last = null;
   let busy = false;
   let timer = null;
   let stopped = false;
+  let failing = null;
   const arm = (ms) => { if (!timer) timer = setTimer(() => { timer = null; check(); }, ms); };
   async function check() {
     if (stopped || busy || !last || !last.room) return;
     const seen = last;
     const { room, votesCast = 0 } = seen;
+    // Not the host any more (a hand-over), or a room from the current live version: leave it alone.
+    if (room.gmUid !== uid || !Array.isArray(room.seats)) return;
     const step = hostStep({
       phase: room.phase, allVoted: room.roundPlayers.length > 0 && votesCast >= room.roundPlayers.length, resultAt: room.resultAt, now: now(),
     });
     if (step?.wait != null) return arm(step.wait);
     if (!step) return;
     busy = true;
+    const key = `${step}:${room.round}`;
     let failed = false;
     try {
       await (step === 'close' ? closeVoting(db, code, rand, room.round) : advance(db, code, families, rand, room.round));
-    } catch { failed = true; }
+      if (failing) { failing = null; onError(null); }
+    } catch (e) {
+      failed = true;
+      if (failing !== key) { failing = key; onError(e); }
+    }
     busy = false;
     // A failed step is retried after a pause, never at once; a state that arrived meanwhile is looked at now.
     if (failed) arm(RETRY_MS);
     else if (last !== seen) check();
   }
-  const off = subscribe(db, code, getAuth(db.app).currentUser?.uid, (state) => { last = state; check(); });
+  const off = subscribe(db, code, uid, (state) => { last = state; check(); });
   return () => { stopped = true; clearTimeout(timer); off(); };
 }

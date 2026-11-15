@@ -35,7 +35,9 @@ service cloud.firestore {
             && request.resource.data.name.size() <= 20;
         }
         allow create: if signedIn() && request.auth.uid == uid && validName() && optionalExpiry(request.resource.data)
-          && request.resource.data.joinedAt == request.time;
+          && request.resource.data.joinedAt == request.time
+          // existsAfter: createRoom writes the room and the host's record in one commit.
+          && existsAfter(/databases/$(database)/documents/rooms/$(code));
         allow update: if signedIn() && request.auth.uid == uid && validName()
           && request.resource.data.joinedAt == resource.data.joinedAt
           // Unchanged (a rename; get() so a doc written before expiry existed may have none), or a new valid expiry.

@@ -605,7 +605,7 @@ describe('room data layer', () => {
     await afterClose(code, 1);
     const clock = fakeClock();
     clock.jump(10000);
-    const stop = runRoom(u.h.db, code, FAM, clock);
+    const stop = runRoom(u.h.db, code, u.h.uid, FAM, clock);
     try {
       await voting(code, 2);
       await sleep(400);
@@ -618,7 +618,7 @@ describe('room data layer', () => {
     await deal(code);
     await asAdmin((d) => d.doc(`rooms/${code}`).update({ final: true }));
     await castAll(code, u.p1.uid);
-    const stop = runRoom(u.h.db, code, FAM, fakeClock());
+    const stop = runRoom(u.h.db, code, u.h.uid, FAM, fakeClock());
     try {
       expect((await afterClose(code, 1)).room.phase).toBe('gameOver');
     } finally { stop(); }
@@ -659,11 +659,10 @@ describe('room data layer', () => {
     await expect(startGame(u.h.db, code, FAM)).rejects.toThrow();
     await startGame(u.p1.db, code, FAM, LAST_SPY);
     const clock = fakeClock();
-    const stop = runRoom(u.p1.db, code, FAM, clock);
+    const stop = runRoom(u.p1.db, code, u.p1.uid, FAM, clock);
     try {
       const room = await rawRoom(code, 'p1');
       for (const id of room.roundPlayers) await castVote(u[idOf(id)].db, code, id, id === u.p2.uid ? u.p3.uid : u.p2.uid);
-      await afterClose(code, 1).catch(() => null);
       await until(async () => (await rawRoom(code, 'p1')).phase === 'result');
       await clock.tick();
       await until(async () => (await rawRoom(code, 'p1')).round === 2);
@@ -689,6 +688,40 @@ describe('room data layer', () => {
     const { room: after } = await state('h', code, (x) => x.room?.phase === 'result');
     expect(after.result).toMatchObject({ voided: true, outUid: u.p2.uid });
     expect(after.seats).not.toContain(u.p2.uid);
+  });
+
+  it('leaveRoom refuses the host; deleteRoom is their way out; a player may still leave', async () => {
+    const code = await lobby(2);
+    await expect(leaveRoom(u.h.db, code, u.h.uid)).rejects.toThrow('Hand the room over first');
+    expect((await state('p1', code, (x) => x.players?.length === 2)).players).toHaveLength(2);
+    await leaveRoom(u.p1.db, code, u.p1.uid);
+    expect(await deleteRoom(u.h.db, code)).toBe(true);
+  });
+
+  it('castVote by someone not in this round, or with no player record, says Not in this round, not Bad clock', async () => {
+    const code = await lobby(4);
+    await deal(code);
+    await joinRoom(u.p4.db, code, u.p4.uid, 'Late');
+    await expect(castVote(u.p4.db, code, u.p4.uid, u.p1.uid)).rejects.toThrow('Not in this round');
+    await leaveRoom(u.p1.db, code, u.p1.uid);
+    await expect(castVote(u.p1.db, code, u.p1.uid, u.p2.uid)).rejects.toThrow('Not in this round');
+  });
+
+  it('no repeat when the pair changes mid-game: a new word set differs from every earlier pair in the room', async () => {
+    const code = await lobby(6);
+    const pairs = [];
+    let secret = (await deal(code, LAST_SPY)).secret;
+    for (let n = 1; n <= 3; n++) {
+      pairs.push([secret.common, secret.spy].sort().join('/'));
+      await playRound(code, secret.spyUid);
+      await afterClose(code, n);
+      await advance(u.h.db, code, FAM);
+      await voting(code, n + 1);
+      secret = await secretOf(code);
+    }
+    pairs.push([secret.common, secret.spy].sort().join('/'));
+    expect(new Set(pairs).size).toBe(4);
+    expect((await usedOf(code)).keys).toHaveLength(4);
   });
 
   it('removePlayer of the host rejects Hand the room over first', async () => {
@@ -753,7 +786,7 @@ describe('room data layer', () => {
 });
 
 describe('runRoom: the room runs itself from the host phone', { timeout: 30000 }, () => {
-  const run = (code, clock) => runRoom(u.h.db, code, FAM, { ...clock, rand: LAST_SPY });
+  const run = (code, clock) => runRoom(u.h.db, code, u.h.uid, FAM, { ...clock, rand: LAST_SPY });
 
   it('automatic round: the last vote brings the result without any call; 10 s later the next round starts', async () => {
     const code = await lobby(5);
@@ -875,7 +908,7 @@ describe('runRoom: the room runs itself from the host phone', { timeout: 30000 }
     } finally { stopA(); stopB(); }
   });
 
-  it('no busy loop: a step that throws is retried only after a pause, with one timer pending', async () => {
+  it('no busy loop: a failing step reports once, retries no faster than 5 s with one timer pending, and recovery clears it', async () => {
     const code = await lobby(5);
     const { secret } = await deal(code, LAST_SPY);
     await castAll(code, secret.spyUid);
@@ -883,16 +916,49 @@ describe('runRoom: the room runs itself from the host phone', { timeout: 30000 }
     await afterClose(code, 1);
     const clock = fakeClock();
     clock.jump(10000);
-    // No word families: dealing new words (the spy was caught) throws every time.
-    const stop = runRoom(u.h.db, code, [], clock);
+    const errors = [];
+    // No word families yet: dealing new words (the spy was caught) throws every time.
+    const fam = [];
+    const stop = runRoom(u.h.db, code, u.h.uid, fam, { ...clock, onError: (e) => errors.push(e) });
     try {
-      await until(() => clock.timers.length);
+      await until(() => errors.length);
       await sleep(500);
       expect(clock.timers).toHaveLength(1);
       expect(clock.calls).toBe(1);
-      expect(clock.timers[0].ms).toBeGreaterThanOrEqual(1000);
+      expect(clock.timers[0].ms).toBeGreaterThanOrEqual(5000);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toBeInstanceOf(Error);
+      // The retry fails the same way: not reported again.
+      clock.timers.splice(0).forEach((t) => t.fn());
+      await until(() => clock.timers.length);
+      expect(errors).toHaveLength(1);
       expect((await rawRoom(code, 'h')).phase).toBe('result');
+      // Families appear: the next retry succeeds and clears the error.
+      fam.push(...FAM);
+      clock.timers.splice(0).forEach((t) => t.fn());
+      await until(() => errors.length === 2);
+      expect(errors[1]).toBeNull();
+      await until(async () => (await rawRoom(code, 'h')).phase === 'voting');
     } finally { stop(); }
+  });
+
+  it('runRoom leaves alone a loop for a uid that is not the host (after a hand-over), and a room with no seats array', async () => {
+    const code = await lobby(4);
+    const { room, secret } = await deal(code, LAST_SPY);
+    await castAll(code, hero(room, secret));
+    const clock = fakeClock();
+    const stop = runRoom(u.p1.db, code, u.p1.uid, FAM, clock);
+    try {
+      await sleep(600);
+      expect((await rawRoom(code, 'h')).phase).toBe('voting');
+    } finally { stop(); }
+    const old = 'OLDR';
+    await setDoc(doc(u.h.db, 'rooms', old), { gmUid: u.h.uid, gmName: 'Gina', phase: 'voting', round: 1, roundPlayers: ['a'], active: ['a'], result: null });
+    const stop2 = runRoom(u.h.db, old, u.h.uid, FAM, fakeClock());
+    try {
+      await sleep(600);
+      expect((await rawRoom(old, 'h')).phase).toBe('voting');
+    } finally { stop2(); }
   });
 
   it('stopping runRoom stops it', async () => {

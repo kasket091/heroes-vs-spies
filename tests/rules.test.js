@@ -56,7 +56,7 @@ describe('security rules', () => {
   it('p1 votes for p1 FAILS', () => assertFails(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'p1', round: 1, expiresAt: ahead(7) })));
   it('p1 votes for stranger FAILS', () => assertFails(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'stranger', round: 1, expiresAt: ahead(7) })));
   it('a uid not in roundPlayers (benched) cannot create a vote; one in roundPlayers can', async () => {
-    await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD').update({ active: ['p1', 'p2', 'p3'], roundPlayers: ['p1', 'p2', 'p3'] }));
+    await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD').update({ seats: ['p1', 'p2', 'p3'], roundPlayers: ['p1', 'p2', 'p3'] }));
     await assertFails(db('p4').doc('rooms/ABCD/votes/1_p4').set({ target: 'p1', round: 1, expiresAt: ahead(7) }));
     await assertSucceeds(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'p2', round: 1, expiresAt: ahead(7) }));
   });
@@ -84,6 +84,17 @@ describe('security rules', () => {
     await assertFails(db('gm').doc('rooms/ABCD/players/p2').update({ votedRound: 1 }));
     await assertSucceeds(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: 1 }));
     await assertSucceeds(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: 2 }));
+  });
+  it('a player record under a code with no room FAILS; under an existing room succeeds', async () => {
+    await assertFails(db('p5').doc('rooms/NOPE/players/p5').set({ name: 'Eve', joinedAt: now(), expiresAt: ahead(7) }));
+    await assertSucceeds(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), expiresAt: ahead(7) }));
+  });
+  it('the host creates the room and their own player record in one batch', async () => {
+    const d = db('gm2');
+    const b = d.batch();
+    b.set(d.doc('rooms/NEWR'), { ...room, gmUid: 'gm2' });
+    b.set(d.doc('rooms/NEWR/players/gm2'), { name: 'Gina', joinedAt: now(), expiresAt: ahead(7) });
+    await assertSucceeds(b.commit());
   });
   it('player create may carry votedRound as an integer only', async () => {
     await assertFails(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), votedRound: 'x' }));
