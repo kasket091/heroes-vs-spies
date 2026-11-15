@@ -1,5 +1,5 @@
 import {
-  doc, collection, query, orderBy, getDoc, getDocs, setDoc, onSnapshot,
+  doc, collection, query, orderBy, getDoc, getDocs, setDoc, deleteDoc, onSnapshot,
   writeBatch, runTransaction, serverTimestamp, where,
 } from 'firebase/firestore';
 import {
@@ -49,7 +49,7 @@ export async function joinRoom(db, code, uid, rawName) {
 }
 
 export function subscribe(db, code, uid, onState) {
-  const s = { room: undefined, players: undefined, priv: null, secret: null, votes: [], myVote: null };
+  const s = { room: undefined, players: undefined, priv: null, secret: null, votes: [], myVote: undefined };
   let gmOffs = [];
   let gmMode = false;
   const emit = () => {
@@ -71,14 +71,14 @@ export function subscribe(db, code, uid, onState) {
   const watchVotes = (room, isGm) => {
     const key = room ? `${isGm}:${room.round}` : null;
     if (key === voteKey) return;
-    voteOff(); voteOff = () => {}; voteKey = key; s.votes = []; s.myVote = null;
+    voteOff(); voteOff = () => {}; voteKey = key; s.votes = []; s.myVote = undefined;
     if (!room || room.round < 1) return;
     // Errors are ignored: a listener can race a hand-over and lose read access.
     if (isGm) {
       const q = query(collection(db, 'rooms', code, 'votes'), where('round', '==', room.round));
       voteOff = onSnapshot(q, (d) => { s.votes = d.docs.map((x) => x.data()); emit(); }, () => {});
     } else {
-      voteOff = onSnapshot(sub(db, code, 'votes', `${room.round}_${uid}`), (d) => { s.myVote = d.exists() ? d.data().target : null; emit(); }, () => {});
+      voteOff = onSnapshot(sub(db, code, 'votes', `${room.round}_${uid}`), (d) => { s.myVote = d.exists() ? d.data().target : null; emit(); }, () => { s.myVote = null; emit(); });
     }
   };
 
@@ -186,6 +186,8 @@ export async function removePlayer(db, code, uid) {
   batch.delete(sub(db, code, 'players', uid));
   await batch.commit();
 }
+
+export const leaveRoom = (db, code, uid) => deleteDoc(sub(db, code, 'players', uid));
 
 export async function handOverGm(db, code, newGmUid) {
   const room = await getRoom(db, code);

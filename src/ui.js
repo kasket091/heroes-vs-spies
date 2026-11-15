@@ -36,6 +36,8 @@ const btn = (label, action, { arg = '', kind = 'primary', disabled = false, extr
 
 const errorLine = (ui) => (ui.error ? `<p class="error" role="alert"><b>Problem:</b> ${esc(ui.error)}</p>` : '');
 
+const leaveBtn = btn('Leave room', 'leave', { kind: 'link' });
+
 const spyTag = '<span class="tag">Spy</span>';
 
 const order = (data, mark) => `<ol class="ruled numbered">${data.room.roundPlayers
@@ -93,7 +95,8 @@ const screens = {
   waiting: ({ uid, data }) => `<h1>You're in!</h1>
     <p>Waiting for ${esc(data.room.gmName)} (game master) to start the round.</p>
     <h2>Players (${data.players.length})</h2>
-    <ol class="ruled numbered">${data.players.map((p) => `<li><span>${esc(p.name)}${p.uid === uid ? ' <i>(you)</i>' : ''}</span></li>`).join('')}</ol>`,
+    <ol class="ruled numbered">${data.players.map((p) => `<li><span>${esc(p.name)}${p.uid === uid ? ' <i>(you)</i>' : ''}</span></li>`).join('')}</ol>
+    ${leaveBtn}`,
 
   lobby: ({ code, data, ui }) => {
     const { room, players } = data;
@@ -111,7 +114,8 @@ const screens = {
       ${btn('New round', 'newRound', { disabled: short || ui.busy, extra: short ? ' aria-describedby="why-not"' : '' })}
       ${short ? `<p id="why-not" class="hint">Needs at least ${MIN_PLAYERS} players. ${players.length} joined so far.</p>` : ''}
       ${errorLine(ui)}
-      ${handOver}`;
+      ${handOver}
+      ${leaveBtn}<p class="hint">The room stays open. Type its code to come back.</p>`;
   },
 
   words: ({ ui }) => `<h1>Words for this round</h1>
@@ -173,7 +177,9 @@ const screens = {
     <h2>Speaking order</h2>
     ${data.room.starterUid ? order(data, (id) => (id === uid ? '<i>(you)</i>' : '')) : '<p>Waiting for the game master to pick who goes first.</p>'}`,
 
-  vote: ({ uid, data, ui }) => (data.myVote
+  vote: ({ uid, data, ui }) => (data.myVote === undefined
+    ? '<p class="status" role="status">Checking your vote…</p>'
+    : data.myVote
     ? `<h1>Vote sent</h1><p>Wait for the game master to show the result.</p>`
     : `<h1>Who is the spy?</h1>
       <p>Tap one name. You can only vote once.</p>
@@ -184,7 +190,7 @@ const screens = {
 
   outOfRound: () => `<h1>Round in progress.</h1><p>You're in the next one.</p>`,
 
-  reveal: ({ data }) => `${result(data)}<p>Waiting for the game master to start the next round.</p>`,
+  reveal: ({ data }) => `${result(data)}<p>Waiting for the game master to start the next round.</p>${leaveBtn}`,
   cancelled: (s) => screens.reveal(s),
 };
 

@@ -96,7 +96,7 @@ function leaveRoom() {
   unsubscribe();
   unsubscribe = () => {};
   params.delete('room');
-  history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}`);
+  history.replaceState(null, '', `${location.pathname}${params.toString() ? `?${params}` : ''}`);
   Object.assign(s, { code: null, data: null });
   update();
 }
@@ -149,6 +149,12 @@ const actions = {
     run(() => api.removePlayer(db, s.code, uid));
   },
   cancelRemove: () => { s.ui.confirmRemove = null; update(); },
+  leave: () => run(async () => {
+    if (s.data?.room?.gmUid !== s.uid) await api.leaveRoom(db, s.code, s.uid);
+    remembered(null);
+    s.ui.fields.code = '';
+    leaveRoom();
+  }),
   makeGm: (uid) => run(() => api.handOverGm(db, s.code, uid)),
 };
 

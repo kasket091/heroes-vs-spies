@@ -165,8 +165,34 @@ describe('render ignores taps right after the screen changes', () => {
   });
 });
 
+describe('leave room button', () => {
+  const has = (html) => html.includes('data-action="leave"');
+  it('on the waiting, reveal and cancelled screens and the game master lobby', () => {
+    expect(has(view(st('a', {})))).toBe(true);
+    for (const phase of ['reveal', 'cancelled']) {
+      expect(has(view(st('a', { phase, result })))).toBe(true);
+      expect(has(view(st('gm', { phase, result })))).toBe(true);
+    }
+    expect(has(view(st('gm', {})))).toBe(true);
+    expect(view(st('gm', {}))).toContain('The room stays open');
+  });
+  it('never mid-round', () => {
+    for (const phase of ['clues', 'voting']) {
+      for (const who of ['a', 'gm', 'x']) {
+        const html = view(st(who, { ...round, phase, starterUid: 'c' }, { secret: { common: 'a', spy: 'b', spyUid: 'c', round: 1 }, myVote: null }));
+        expect(has(html)).toBe(false);
+      }
+    }
+  });
+});
+
 describe('vote screen', () => {
   const vs = (extra, ui = {}) => view(st('a', { ...round, phase: 'voting', starterUid: 'c' }, extra, ui));
+  it('shows a status, not buttons, until the own vote is known', () => {
+    const html = vs({ myVote: undefined });
+    expect(html).toContain('Checking your vote');
+    expect(html).not.toContain('data-action="vote"');
+  });
   it('shows Vote sent from the stored vote, not from a local flag', () => {
     expect(vs({ myVote: 'b' })).toContain('Vote sent');
     expect(vs({ myVote: null }, { voted: true })).toContain('Who is the spy?');

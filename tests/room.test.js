@@ -3,7 +3,7 @@ import { deleteApp } from 'firebase/app';
 import { safeStarters } from '../src/game.js';
 import { initFirebase, signIn } from '../src/firebase.js';
 import {
-  createRoom, joinRoom, subscribe, dealRound, pickStarter, openVoting,
+  leaveRoom, createRoom, joinRoom, subscribe, dealRound, pickStarter, openVoting,
   castVote, closeVoting, removePlayer, handOverGm,
 } from '../src/room.js';
 
@@ -257,7 +257,7 @@ describe('room data layer', () => {
     const code = await lobby(4);
     const secret = await voting(code);
     const target = [1, 2, 3, 4].map((i) => u[`p${i}`].uid).find((id) => id !== u.p1.uid);
-    expect((await state('p1', code)).myVote).toBeNull();
+    expect((await state('p1', code, (s) => s.myVote !== undefined)).myVote).toBeNull();
     await castVote(u.p1.db, code, u.p1.uid, target);
     expect((await state('p1', code, (s) => s.myVote)).myVote).toBe(target);
     await expect(castVote(u.p1.db, code, u.p1.uid, secret.spyUid)).rejects.toThrow();
@@ -271,6 +271,13 @@ describe('room data layer', () => {
     await closeVoting(u.gm.db, code);
     await dealRound(u.gm.db, code, 'sun', 'moon');
     expect((await state('gm', code, (s) => s.room?.round === 2)).votesCast).toBe(0);
+  });
+
+  it('leaveRoom removes the player from the list', async () => {
+    const code = await lobby(4);
+    await leaveRoom(u.p2.db, code, u.p2.uid);
+    const s = await state('gm', code, (x) => x.players?.length === 3);
+    expect(s.players.map((p) => p.uid)).not.toContain(u.p2.uid);
   });
 
   it('deals a round to 15 players: all get a word, exactly one differs', async () => {
@@ -287,7 +294,7 @@ describe('room data layer', () => {
       for (const n of extra) words.push((await state(n, code, (s) => s.myWord)).myWord);
       const cat = words.filter((w) => w === 'cat').length;
       expect(words.every((w) => w === 'cat' || w === 'dog')).toBe(true);
-      expect([1, 14]).toContain(cat);
+      expect(cat).toBe(14);
     } finally {
       await Promise.all(extra.map((n) => deleteApp(u[n].auth.app)));
     }
