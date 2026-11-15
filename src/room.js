@@ -1,10 +1,10 @@
 import {
   doc, collection, query, orderBy, getDoc, getDocs, setDoc, deleteDoc, onSnapshot,
-  writeBatch, runTransaction, updateDoc, serverTimestamp, where, Timestamp,
+  writeBatch, runTransaction, updateDoc, serverTimestamp, where, Timestamp, deleteField,
 } from 'firebase/firestore';
 import {
-  MIN_PLAYERS, speakingOrder, pickSpy, pickStarter, pickUnusedPair, waitingFor, hostStep, cleanName, newRoomCode,
-  whoIsOut, scoreRound, stage, gameWinner,
+  MIN_PLAYERS, speakingOrder, pickCarrier, pickStarter, pickUnusedPair, waitingFor, hostStep, cleanName, newRoomCode,
+  whoIsOut, roundGains, ranking, stage,
 } from './game.js';
 
 export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
@@ -57,8 +57,7 @@ export async function createRoom(db, uid, rawName, nextCode = newRoomCode) {
         tx.set(sub(db, code, 'players', uid), { name: gmName, joinedAt: serverTimestamp(), ...recordTtl() });
         tx.set(roomRef(db, code), {
           gmUid: uid, gmName, phase: 'lobby', round: 0, roundPlayers: [], starterUid: null, result: null,
-          seats: [], names: {}, heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 },
-          wordSet: 0, needsWords: false, final: false, winner: null, setStart: false, resultAt: null, ...roomTtl(),
+          inGame: [], out: [], gone: [], points: {}, names: {}, wordSet: 0, final: false, resultAt: null, ...roomTtl(),
         });
         return true;
       });
@@ -78,10 +77,10 @@ export async function joinRoom(db, code, uid, rawName) {
   const name = cleanName(rawName);
   if (!name) throw new Error('Name needed');
   const room = await getRoom(db, code);
-  // A room made by the version before Heroes vs Spies: refuse before writing anything.
-  if (!Array.isArray(room.seats)) throw new Error('Old room');
+  // A room made by the version before the jumping virus: refuse before writing anything.
+  if (!Array.isArray(room.inGame)) throw new Error('Old room');
   const same = (n) => n.toLowerCase() === name.toLowerCase();
-  // While a game runs, its names (benched and removed players too) stay reserved for their own uid.
+  // While a game runs, its names (voted-out and removed players too) stay reserved for their own uid.
   const running = room.phase !== 'lobby' && room.phase !== 'gameOver';
   if (running && Object.entries(room.names).some(([id, n]) => id !== uid && same(n))) throw new Error('Name already taken');
   // The host already has their player record from createRoom.
@@ -115,7 +114,7 @@ export function subscribe(db, code, uid, onState) {
     const state = {
       room,
       players: s.players,
-      myWord: !!room && !!room.seats?.includes(uid) && s.priv && s.priv.wordSet === room.wordSet ? s.priv.word : null,
+      myWord: !!room && !!room.inGame?.includes(uid) && s.priv && s.priv.wordSet === room.wordSet ? s.priv.word : null,
       myVote: s.myVote,
       waiting: room && room.phase === 'voting' ? waitingFor(room.roundPlayers, s.players, room.round) : [],
     };
@@ -161,48 +160,35 @@ export function subscribe(db, code, uid, onState) {
   return () => { offs.forEach((f) => f()); voteOff(); };
 }
 
-// Everything a round result says before the spy is caught or the game ends: nothing about the spy.
-const noSpy = { spyUid: null, spyName: null, common: null, spy: null };
-const blankResult = { outUid: null, outName: null, wasSpy: false, team: null, points: 0, voided: false, ...noSpy };
-
 async function readRoom(tx, db, code) {
   const snap = await tx.get(roomRef(db, code));
   if (!snap.exists()) throw new Error('Room not found');
   return snap.data();
 }
 
-// Writes only: the caller has read the room and the secret already.
-function endGame(tx, db, code, room, secret) {
-  const known = secret?.wordSet === room.wordSet && [...room.seats, ...room.spyBench].includes(secret.spyUid);
-  tx.update(roomRef(db, code), {
-    phase: 'gameOver', ...roomTtl(),
-    winner: gameWinner(room.score),
-    result: {
-      ...blankResult,
-      // Keep what the last result already made public.
-      ...Object.fromEntries(['outUid', 'outName', 'spyUid', 'spyName', 'common', 'spy'].map((k) => [k, room.result?.[k] ?? null])),
-      ...(known && { spyUid: secret.spyUid, spyName: room.names[secret.spyUid] ?? null, common: secret.common, spy: secret.spy }),
-    },
-  });
-}
+// Everything a result makes public: who was out, the carrier of that round, both words and the points just earned.
+const resultOf = (room, secret, { outUid, voided, gains }) => ({
+  outUid, outName: room.names[outUid] ?? null, wasCarrier: outUid === secret.carrierUid, voided,
+  carrierUid: secret.carrierUid, carrierName: room.names[secret.carrierUid] ?? null, common: secret.common, odd: secret.odd, gains,
+});
 
-// Writes only: picks the pair, the spy and the first speaker, and stores them where players cannot read.
-// `fresh` starts a new game from `players`; otherwise it deals new words to the seats still in.
-function deal(tx, db, code, { room, seats, names, used, families, rand, fresh }) {
+// Writes only: picks the pair, the carrier (anyone still in, the last one included) and the first speaker,
+// and stores them where players cannot read. `fresh` starts a new game from `inGame`.
+function deal(tx, db, code, { room, inGame, names, used, families, rand, fresh }) {
   const picked = pickUnusedPair(families, used, rand);
   const flip = rand() >= 0.5;
-  const words = { common: picked.pair[flip ? 1 : 0], spy: picked.pair[flip ? 0 : 1] };
-  const spyUid = pickSpy(seats, rand);
-  const starterUid = pickStarter(seats, spyUid, true, rand);
+  const words = { common: picked.pair[flip ? 1 : 0], odd: picked.pair[flip ? 0 : 1] };
+  const carrierUid = pickCarrier(inGame, rand);
+  const starterUid = pickStarter(inGame, carrierUid, rand);
   const wordSet = room.wordSet + 1;
   // round keeps counting across games: vote ids are round_uid and the rules never let a vote be replaced.
   tx.update(roomRef(db, code), {
-    phase: 'voting', wordSet, round: room.round + 1, roundPlayers: speakingOrder(seats, starterUid), starterUid, result: null, resultAt: null,
-    final: stage(seats.length) === 'final', needsWords: false, setStart: true, ...roomTtl(),
-    ...(fresh && { seats, names, heroBench: [], spyBench: [], score: { heroes: 0, spies: 0 }, winner: null }),
+    phase: 'voting', wordSet, round: room.round + 1, roundPlayers: speakingOrder(inGame, starterUid), starterUid, result: null, resultAt: null,
+    final: stage(inGame.length) === 'final', ...roomTtl(),
+    ...(fresh && { inGame, names, out: [], gone: [], points: Object.fromEntries(inGame.map((id) => [id, 0])), ranking: deleteField() }),
   });
-  for (const id of seats) tx.set(sub(db, code, 'private', id), { word: id === spyUid ? words.spy : words.common, wordSet, ...recordTtl() });
-  tx.set(sub(db, code, 'gm', 'secret'), { ...words, spyUid, wordSet, ...recordTtl() });
+  for (const id of inGame) tx.set(sub(db, code, 'private', id), { word: id === carrierUid ? words.odd : words.common, wordSet, ...recordTtl() });
+  tx.set(sub(db, code, 'gm', 'secret'), { ...words, carrierUid, wordSet, ...recordTtl() });
   tx.set(sub(db, code, 'gm', 'used'), { keys: picked.usedKeys, ...recordTtl() });
 }
 
@@ -214,7 +200,7 @@ export async function startGame(db, code, families, rand = Math.random) {
     if (players.length < MIN_PLAYERS) throw new Error('Not enough players');
     const used = (await tx.get(sub(db, code, 'gm', 'used'))).data()?.keys ?? [];
     deal(tx, db, code, {
-      room, seats: players.map((p) => p.id), names: Object.fromEntries(players.map((p) => [p.id, p.name])), used, families, rand, fresh: true,
+      room, inGame: players.map((p) => p.id), names: Object.fromEntries(players.map((p) => [p.id, p.name])), used, families, rand, fresh: true,
     });
   });
 }
@@ -224,17 +210,17 @@ export async function advance(db, code, families, rand = Math.random, round) {
   await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     if (room.phase !== 'result' || (round != null && room.round !== round)) return;
-    const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
-    if (stage(room.seats.length) === 'over') return endGame(tx, db, code, room, secret);
-    if (room.needsWords) {
-      const used = (await tx.get(sub(db, code, 'gm', 'used'))).data()?.keys ?? [];
-      return deal(tx, db, code, { room, seats: room.seats, names: room.names, used, families, rand, fresh: false });
+    if (stage(room.inGame.length) === 'over') {
+      // Removals left fewer than three: no final, everyone ranked by points.
+      const { inGame, out, gone, points, names } = room;
+      tx.update(roomRef(db, code), {
+        phase: 'gameOver', ...roomTtl(),
+        ranking: ranking({ inGame, out, gone, points, names, carrierUid: null, caught: false, hadFinal: false }),
+      });
+      return;
     }
-    const starterUid = pickStarter(room.seats, secret?.spyUid, false, rand);
-    tx.update(roomRef(db, code), {
-      round: room.round + 1, roundPlayers: speakingOrder(room.seats, starterUid), starterUid, result: null, resultAt: null,
-      final: stage(room.seats.length) === 'final', phase: 'voting', setStart: false, ...roomTtl(),
-    });
+    const used = (await tx.get(sub(db, code, 'gm', 'used'))).data()?.keys ?? [];
+    deal(tx, db, code, { room, inGame: room.inGame, names: room.names, used, families, rand, fresh: false });
   });
 }
 
@@ -268,24 +254,27 @@ export async function closeVoting(db, code, rand = Math.random, round) {
     const room = await readRoom(tx, db, code);
     if (room.phase !== 'voting' || (round != null && room.round !== round)) return;
     const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
+    // Only this round's players count: a vote from anyone else never scores.
     const votes = {};
     for (const id of room.roundPlayers) {
       const v = await tx.get(sub(db, code, 'votes', `${room.round}_${id}`));
       if (v.exists()) votes[id] = v.data().target;
     }
     const outUid = whoIsOut(votes, room.roundPlayers, rand);
-    const { wasSpy, team, points, score } = scoreRound({ outUid, spyUid: secret.spyUid, score: room.score, final: room.final });
-    const result = {
-      ...blankResult, outUid, outName: room.names[outUid] ?? null, wasSpy, team, points,
-      ...((wasSpy || room.final) && { spyUid: secret.spyUid, spyName: room.names[secret.spyUid] ?? null, common: secret.common, spy: secret.spy }),
-    };
+    const gains = roundGains({ outUid, carrierUid: secret.carrierUid, votes, final: room.final });
+    const points = { ...room.points };
+    for (const [id, n] of Object.entries(gains)) points[id] = (points[id] ?? 0) + n;
+    const result = resultOf(room, secret, { outUid, voided: false, gains });
+    // The result, the points and (at the end) the ranking go in this one write, so a repeat finds the phase moved on.
     if (room.final) {
-      tx.update(roomRef(db, code), { score, result, resultAt: Date.now(), winner: gameWinner(score), phase: 'gameOver', ...roomTtl() });
+      tx.update(roomRef(db, code), {
+        points, result, resultAt: Date.now(), phase: 'gameOver', ...roomTtl(),
+        ranking: ranking({ inGame: room.inGame, out: room.out, gone: room.gone, points, names: room.names, carrierUid: secret.carrierUid, caught: result.wasCarrier, hadFinal: true }),
+      });
     } else {
       tx.update(roomRef(db, code), {
-        score, result, resultAt: Date.now(), needsWords: wasSpy, phase: 'result', ...roomTtl(),
-        seats: room.seats.filter((id) => id !== outUid),
-        [wasSpy ? 'spyBench' : 'heroBench']: [...room[wasSpy ? 'spyBench' : 'heroBench'], outUid],
+        points, result, resultAt: Date.now(), phase: 'result', ...roomTtl(),
+        inGame: room.inGame.filter((id) => id !== outUid), out: [...room.out, outUid],
       });
     }
   });
@@ -296,19 +285,15 @@ export async function removePlayer(db, code, uid) {
   await gmTx(db, code, async (tx) => {
     const room = await readRoom(tx, db, code);
     if (uid === room.gmUid) throw new Error('Hand the room over first');
-    const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
-    const playing = room.seats.includes(uid) && room.phase !== 'lobby' && room.phase !== 'gameOver';
+    const playing = room.inGame.includes(uid) && (room.phase === 'voting' || room.phase === 'result');
     if (playing) {
-      const isSpy = secret?.wordSet === room.wordSet && secret.spyUid === uid;
-      const update = { seats: room.seats.filter((id) => id !== uid), needsWords: room.needsWords || isSpy };
+      const update = { inGame: room.inGame.filter((id) => id !== uid), gone: [...room.gone, uid] };
       if (room.phase === 'voting') {
+        const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
         update.phase = 'result';
         update.resultAt = Date.now();
-        // The words and the spy are shown only if the spy is the one leaving.
-        update.result = {
-          ...blankResult, voided: true, outUid: uid, outName: room.names[uid] ?? null,
-          ...(isSpy && { spyUid: uid, spyName: room.names[uid] ?? null, common: secret.common, spy: secret.spy }),
-        };
+        // A cancelled round scores nothing, but still names the carrier and both words.
+        update.result = resultOf(room, secret, { outUid: uid, voided: true, gains: {} });
       }
       tx.update(roomRef(db, code), { ...update, ...roomTtl() });
     } else tx.update(roomRef(db, code), roomTtl());
@@ -375,8 +360,8 @@ export function runRoom(db, code, uid, families, { now = Date.now, setTimer = se
     if (stopped || busy || !last || !last.room) return;
     const seen = last;
     const { room, votesCast = 0 } = seen;
-    // Not the host any more (a hand-over), or a room from the current live version: leave it alone.
-    if (room.gmUid !== uid || !Array.isArray(room.seats)) return;
+    // Not the host any more (a hand-over), or a room from another version: leave it alone.
+    if (room.gmUid !== uid || !Array.isArray(room.inGame)) return;
     const step = hostStep({
       phase: room.phase, allVoted: room.roundPlayers.length > 0 && votesCast >= room.roundPlayers.length, resultAt: room.resultAt, now: now(),
     });

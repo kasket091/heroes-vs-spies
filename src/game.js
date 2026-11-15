@@ -3,7 +3,7 @@ export const MIN_PLAYERS = 4;
 
 const pick = (list, rand) => list[Math.floor(rand() * list.length)];
 
-// A starter is safe when the spy speaks 3rd or later.
+// A starter is safe when the carrier speaks 3rd or later.
 export function safeStarters(playerIds, spyId) {
   const n = playerIds.length;
   const spy = playerIds.indexOf(spyId);
@@ -14,8 +14,6 @@ export function speakingOrder(playerIds, starterId) {
   const i = playerIds.indexOf(starterId);
   return [...playerIds.slice(i), ...playerIds.slice(0, i)];
 }
-
-export const pickSpy = (playerIds, rand = Math.random) => pick(playerIds, rand);
 
 export function cleanName(raw) {
   return raw.slice(0, 20).trim() || null;
@@ -57,25 +55,7 @@ export function whoIsOut(votes, activeIds, rand = Math.random) {
   return pick(activeIds.filter((id) => counts[id] === max), rand);
 }
 
-export const finalPoints = ({ heroes, spies }) => Math.abs(heroes - spies) + 1;
-
-export function scoreRound({ outUid, spyUid, score, final }) {
-  const wasSpy = outUid === spyUid;
-  const team = wasSpy ? 'heroes' : 'spies';
-  const points = final ? finalPoints(score) : 1;
-  return { wasSpy, team, points, score: { ...score, [team]: score[team] + points } };
-}
-
 export const stage = (activeCount) => (activeCount > 3 ? 'round' : activeCount === 3 ? 'final' : 'over');
-
-export const gameWinner = ({ heroes, spies }) => (heroes > spies ? 'heroes' : spies > heroes ? 'spies' : 'draw');
-
-export function teams({ active, heroBench, spyBench, spyUid }) {
-  return {
-    heroes: [...active.filter((id) => id !== spyUid), ...heroBench],
-    spies: [...active.filter((id) => id === spyUid), ...spyBench],
-  };
-}
 
 const CODE_LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 

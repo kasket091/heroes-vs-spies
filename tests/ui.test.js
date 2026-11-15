@@ -121,11 +121,6 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(html).toContain('Heroes <b>1</b>');
     expect(html).not.toContain('Final battle');
   });
-  it('seated, voting, final: "Final battle, worth N"', () => {
-    const final = game({ final: true, seats: ['a', 'b', 'gm'], roundPlayers: ['a', 'b', 'gm'], score: { heroes: 1, spies: 4 } });
-    expect(view(st('a', final, { myWord: 'Cola' }))).toContain('Final battle, worth 4 points.');
-    expect(view(st('a', { ...final, score: { heroes: 2, spies: 2 } }, { myWord: 'Cola' }))).toContain('Final battle, worth 1 point.');
-  });
   it('seated, voting, voted: word, order, Vote sent, who is left to vote in speaking order', () => {
     const s = st('a', game(), { myWord: 'Cola', myVote: 'b', waiting: ['gm', 'c'] });
     expect(screenFor(s)).toBe('vote');
@@ -182,30 +177,6 @@ describe('screenFor: one test per row of the screen table', () => {
     expect(late).not.toContain('starts in a moment');
     expect(view(st('e', inResult()))).toContain("You're on the Hero bench.");
   });
-  it('anyone, gameOver: as today; others wait for the host and can Leave', () => {
-    const over = game({ phase: 'gameOver', seats: ['a', 'b', 'c'], winner: 'spies', score: { heroes: 1, spies: 8 }, result: { ...notSpy, spyUid: 'c', spyName: 'Cara', common: 'Cola', spy: 'Water' } });
-    expect(screenFor(st('a', over))).toBe('gameOver');
-    expect(screenFor(st('e', over))).toBe('gameOver');
-    const html = view(st('a', over));
-    for (const t of ['Spies win!', 'Heroes <b>1</b>', 'Spies <b>8</b>', 'Cola', 'Water', 'Waiting for Gina to start a new game.']) expect(html).toContain(t);
-    expect(has(html, 'leave')).toBe(true);
-    expect(has(html, 'askLeave')).toBe(false);
-    const heroes = html.slice(html.indexOf('Heroes team'), html.indexOf('Spies team'));
-    for (const n of ['Ann', 'Ben', 'Eli']) expect(heroes).toContain(n);
-    expect(heroes).not.toContain('Cara');
-    expect(html.slice(html.indexOf('Spies team'))).toContain('Fay');
-    expect(html).toMatch(/Ben<\/b> was voted out and was not the spy\./);
-    expect(view(st('a', { ...over, winner: 'draw', score: { heroes: 2, spies: 2 } }))).toContain("It's a draw");
-    expect(view(st('a', { ...over, result: { ...notSpy, points: 0 } }))).not.toContain('was voted out');
-  });
-  it('gameOver, host: the result above the room code, New game, Remove, hand over, no Leave with others', () => {
-    const s = st('gm', game({ phase: 'gameOver', winner: 'heroes', score: { heroes: 5, spies: 4 }, result: caught }));
-    expect(screenFor(s)).toBe('lobby');
-    const html = view(s);
-    expect(html.indexOf('Heroes win')).toBeLessThan(html.indexOf('Room code'));
-    for (const a of ['newGame', 'remove', 'handOver']) expect(has(html, a)).toBe(true);
-    expect(has(html, 'leave')).toBe(false);
-  });
   it('the host during a game: the collapsed Remove a player and the keep-open line, on every game screen', () => {
     for (const s of [st('gm', game(), { myWord: 'Cola' }), st('gm', game(), { myVote: 'a' }), st('gm', inResult()),
       st('gm', game({ seats: ['a', 'b', 'c'], roundPlayers: ['a', 'b', 'c'], heroBench: ['e', 'gm'] }))]) {
@@ -258,19 +229,6 @@ describe('secrecy', () => {
   const names = (html) => html.replace(/ <i>\(you\)<\/i>/g, '').replace(/Gina|Ann|Ben|Cara/g, 'NAME').replace(/data-arg="(gm|a|b|c)"/g, 'data-arg="X"');
   const mask = (html) => rows(names(strip(html)));
   const votes = (html) => (html.match(/data-action="vote"/g) || []).length;
-  it("the host's voting view equals a player's once host-only controls and (you) are masked, host as spy and as hero", () => {
-    for (const word of ['Cola', 'Water']) {
-      for (const extra of [{ myVote: null }, { myVote: 'b', waiting: ['c'] }, { myVote: 'b' }, { myVote: undefined }]) {
-        for (const final of [false, true]) {
-          const r = game({ final });
-          const host = view(st('gm', r, { ...extra, myWord: word }));
-          const player = view(st('a', r, { ...extra, myWord: word }));
-          expect(mask(host)).toBe(mask(player));
-          expect(votes(host)).toBe(votes(player));
-        }
-      }
-    }
-  });
   it('no view before gameOver has the other word or marks the spy, for the host as spy or hero', () => {
     for (const [mine, other] of [['Water', 'Cola'], ['Cola', 'Water']]) {
       const states = [
@@ -295,18 +253,6 @@ describe('secrecy', () => {
     };
     for (const s of [st('gm', game(), { myWord: 'Cola' }), st('gm', inResult()), st('gm', {}), st('a', game(), { myWord: 'Cola' }), st('e', game())]) {
       expect(() => view(trap(s))).not.toThrow();
-    }
-  });
-  it('the active spy and a hero see the same screen apart from the word and their own seat', () => {
-    const mask2 = (html, word) => rows(names(html.replace(word, 'WORD')));
-    for (const final of [false, true]) {
-      for (const extra of [{ myVote: null }, { myVote: 'gm', waiting: ['b'] }]) {
-        const r = game({ final });
-        const spy = view(st('c', r, { ...extra, myWord: 'Water' }));
-        const hero = view(st('a', r, { ...extra, myWord: 'Cola' }));
-        expect(mask2(spy, 'Water')).toBe(mask2(hero, 'Cola'));
-        expect(votes(spy)).toBe(votes(hero));
-      }
     }
   });
   it('a "not the spy" result names no spy and shows neither word, for anyone', () => {
@@ -338,13 +284,6 @@ describe('leave', () => {
       expect(asked).toContain("You're in a game. Leaving can hold it up for the others.");
       expect(has(asked, 'leave')).toBe(true);
       expect(has(asked, 'stay')).toBe(true);
-    }
-  });
-  it('never to a host with others present, in any phase', () => {
-    for (const s of [st('gm', {}), st('gm', game()), st('gm', inResult()), st('gm', game({ phase: 'gameOver', winner: 'draw', result: notSpy }))]) {
-      const html = view({ ...s, ui: { ...s.ui, confirmLeave: true } });
-      expect(has(html, 'leave')).toBe(false);
-      expect(has(html, 'askLeave')).toBe(false);
     }
   });
   it('directly between games, on a bench and for a late joiner', () => {
@@ -443,12 +382,6 @@ describe('render ignores taps right after the screen changes', () => {
 });
 
 describe('one Leave control per screen, open sections kept', () => {
-  it('no screen has more than one Leave control', () => {
-    const states = [st('a', {}), st('gm', {}, { players: [{ uid: 'gm', name: 'Gina' }] }), st('a', game(), { myWord: 'Cola' }),
-      st('a', game(), { myVote: 'b' }), st('e', game()), st('d', game()), st('a', inResult()), st('e', inResult()), st('d', inResult()),
-      st('a', game({ phase: 'gameOver', winner: 'draw', result: notSpy })), st('a', game(), {}, { confirmLeave: true })];
-    for (const s of states) expect((view(s).match(/data-action="(leave|askLeave)"/g) || []).length).toBeLessThanOrEqual(1);
-  });
   it('keeps Remove a player and the hand-over section open when the page says so', () => {
     expect(view(st('gm', game(), {}, { openRemove: true }))).toContain('<details class="manage" data-open="openRemove" open>');
     expect(view(st('gm', game()))).toContain('<details class="manage" data-open="openRemove">');
@@ -488,21 +421,6 @@ describe('final review fixes', () => {
     const spy = view(st('c', r, { myWord: 'Water', waiting: ['b', 'c'] })).replace('Water', 'W').replace(' <i>(you)</i>', '');
     const heroHtml = view(st('c', r, { myWord: 'Cola', waiting: ['b', 'c'] })).replace('Cola', 'W').replace(' <i>(you)</i>', '');
     expect(spy).toBe(heroHtml);
-  });
-  it('the host can close the vote now during voting (seated or benched), asked first; nowhere else', () => {
-    const benched = game({ seats: ['a', 'b', 'c'], roundPlayers: ['a', 'b', 'c'], heroBench: ['e', 'gm'] });
-    for (const s of [st('gm', game()), st('gm', benched)]) {
-      const html = view(s);
-      expect(html).toContain('>Close the vote now<');
-      expect(html).toContain('Counts the votes cast so far.');
-      const asked = view({ ...s, ui: { ...s.ui, confirmClose: true } });
-      expect(asked).toContain('data-open="openRemove" open');
-      expect(has(asked, 'closeVote')).toBe(true);
-      expect(has(asked, 'cancelClose')).toBe(true);
-      expect(asked).toContain('Close the vote now? Counts the votes cast so far.');
-    }
-    for (const s of [st('gm', inResult()), st('gm', {}), st('gm', game({ phase: 'gameOver', winner: 'draw', result: notSpy })),
-      st('a', game()), st('e', game()), st('d', game())]) expect(has(view(s), 'closeVote')).toBe(false);
   });
   it('settle drops the close question when the round changes', () => {
     const a = st('gm', game({ round: 1 }), {}, { confirmClose: true });

@@ -29,7 +29,7 @@ beforeEach(async () => {
       await d.doc(`rooms/ABCD/players/${p}`).set({ name: p, joinedAt: 1 });
       await d.doc(`rooms/ABCD/private/${p}`).set({ word: 'w' + p, round: 1 });
     }
-    await d.doc('rooms/ABCD/gm/secret').set({ common: 'a', spy: 'b', spyUid: 'p3', round: 1 });
+    await d.doc('rooms/ABCD/gm/secret').set({ common: 'a', odd: 'b', carrierUid: 'p3', round: 1 });
   });
 });
 
@@ -55,8 +55,8 @@ describe('security rules', () => {
   it('p1 creates votes/1_p2 FAILS', () => assertFails(db('p1').doc('rooms/ABCD/votes/1_p2').set({ target: 'p3', round: 1, expiresAt: ahead(7) })));
   it('p1 votes for p1 FAILS', () => assertFails(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'p1', round: 1, expiresAt: ahead(7) })));
   it('p1 votes for stranger FAILS', () => assertFails(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'stranger', round: 1, expiresAt: ahead(7) })));
-  it('a uid not in roundPlayers (benched) cannot create a vote; one in roundPlayers can', async () => {
-    await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD').update({ seats: ['p1', 'p2', 'p3'], roundPlayers: ['p1', 'p2', 'p3'] }));
+  it('a uid not in roundPlayers (voted out) cannot create a vote; one in roundPlayers can', async () => {
+    await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD').update({ inGame: ['p1', 'p2', 'p3'], roundPlayers: ['p1', 'p2', 'p3'] }));
     await assertFails(db('p4').doc('rooms/ABCD/votes/1_p4').set({ target: 'p1', round: 1, expiresAt: ahead(7) }));
     await assertSucceeds(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'p2', round: 1, expiresAt: ahead(7) }));
   });

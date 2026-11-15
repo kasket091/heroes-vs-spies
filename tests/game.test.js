@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { MIN_PLAYERS, safeStarters, speakingOrder, pickSpy, cleanName, newRoomCode, starterChoices, pickCarrier, roundGains, ranking, whoIsOut, finalPoints, scoreRound, stage, gameWinner, teams, pairKeys, pickUnusedPair, pickStarter, waitingFor, hostStep, stalled } from '../src/game.js';
+import { MIN_PLAYERS, safeStarters, speakingOrder, cleanName, newRoomCode, starterChoices, pickCarrier, roundGains, ranking, whoIsOut, stage, pairKeys, pickUnusedPair, pickStarter, waitingFor, hostStep, stalled } from '../src/game.js';
 import families from '../words/word-families.json';
 
 const P = ['a', 'b', 'c', 'd', 'e'];
@@ -16,10 +16,6 @@ test('every safe starter puts the spy 3rd or later, for every spy', () => {
 });
 test('speakingOrder wraps around', () => {
   expect(speakingOrder(P, 'd')).toEqual(['d', 'e', 'a', 'b', 'c']);
-});
-test('pickSpy stays inside the list', () => {
-  expect(pickSpy(P, () => 0)).toBe('a');
-  expect(pickSpy(P, () => 0.999)).toBe('e');
 });
 test('cleanName', () => {
   expect(cleanName('  Ana ')).toBe('Ana');
@@ -38,6 +34,11 @@ test('pickCarrier is uniform over everyone still in', () => {
   const counts = { a: 0, b: 0, c: 0, d: 0 };
   for (let i = 0; i < 4000; i += 1) counts[pickCarrier(['a', 'b', 'c', 'd'])] += 1;
   for (const k of Object.keys(counts)) expect(counts[k]).toBeGreaterThan(800);   // 1000 expected each
+});
+test('the last carrier is as likely as anyone: 600 picks among 4 with real randomness', () => {
+  const counts = { a: 0, b: 0, c: 0, d: 0 };
+  for (let i = 0; i < 600; i += 1) counts[pickCarrier(['a', 'b', 'c', 'd'])] += 1;
+  for (const k of Object.keys(counts)) { expect(counts[k]).toBeGreaterThan(100); expect(counts[k]).toBeLessThan(200); }
 });
 test('starterChoices: two speak before the carrier from 5 players', () => {
   expect(starterChoices(['a', 'b', 'c', 'd', 'e'], 'c')).toEqual(['a', 'd', 'e']);
@@ -76,6 +77,28 @@ test('ranking: no final, everyone still in or voted out by points, removed playe
     points: { a: 1, b: 0, d: 3, f: 7 } });
   expect(places(r)).toEqual(['1:d:out', '2:a:out', '3:b:out', '4:f:gone']);
 });
+test('ranking: players voted out take places 4, 4, 4, 7 on level points', () => {
+  const r = ranking({ inGame: ['a', 'b', 'c'], out: ['d', 'e', 'f', 'g'], gone: [], names: { ...N, g: 'Gus' }, carrierUid: 'c', caught: false, hadFinal: true,
+    points: { a: 0, b: 0, c: 0, d: 3, e: 3, f: 3, g: 1 } });
+  expect(places(r).slice(3)).toEqual(['4:d:out', '4:e:out', '4:f:out', '7:g:out']);
+});
+test('ranking: removed players are level with each other, and below everyone else', () => {
+  const r = ranking({ inGame: ['a', 'b', 'c'], out: ['d'], gone: ['e', 'f'], names: N, carrierUid: 'c', caught: true, hadFinal: true,
+    points: { a: 0, b: 0, c: 0, d: 0, e: 5, f: 5 } });
+  expect(places(r).slice(4)).toEqual(['5:e:gone', '5:f:gone']);
+});
+test('ranking: a uid missing from points counts as 0', () => {
+  const r = ranking({ inGame: ['a', 'b', 'c'], out: ['d', 'e'], gone: [], names: N, carrierUid: 'c', caught: true, hadFinal: true, points: { e: 1 } });
+  expect(r.map((x) => [x.uid, x.points])).toEqual([['a', 0], ['b', 0], ['c', 0], ['e', 1], ['d', 0]]);
+});
+test('ranking: a caught final with nobody out is the podium alone', () => {
+  const r = ranking({ inGame: ['a', 'b', 'c'], out: [], gone: [], names: N, carrierUid: 'a', caught: true, hadFinal: true, points: { a: 1, b: 2, c: 3 } });
+  expect(places(r)).toEqual(['1:c:podium', '2:b:podium', '3:a:podium']);
+});
+test('ranking: no final, two still in level with one voted out share a place', () => {
+  const r = ranking({ inGame: ['a', 'b'], out: ['d'], gone: [], names: N, carrierUid: null, caught: false, hadFinal: false, points: { a: 2, b: 2, d: 2 } });
+  expect(places(r)).toEqual(['1:a:out', '1:b:out', '1:d:out']);
+});
 test('whoIsOut: clear winner', () => {
   expect(whoIsOut({ a: 'c', b: 'c', d: 'a' }, ['a', 'b', 'c', 'd'], () => 0)).toBe('c');
 });
@@ -92,33 +115,8 @@ test('whoIsOut: no votes draws among everyone', () => {
   expect(whoIsOut({}, ['a', 'b', 'c'], () => 0)).toBe('a');
   expect(whoIsOut({}, ['a', 'b', 'c'], () => 0.99)).toBe('c');
 });
-test('finalPoints is the gap plus 1', () => {
-  expect(finalPoints({ heroes: 1, spies: 4 })).toBe(4);
-  expect(finalPoints({ heroes: 2, spies: 2 })).toBe(1);
-});
-test('scoreRound: spy caught, hero out, and both finals from the spec', () => {
-  expect(scoreRound({ outUid: 'c', spyUid: 'c', score: { heroes: 0, spies: 0 }, final: false }))
-    .toEqual({ wasSpy: true, team: 'heroes', points: 1, score: { heroes: 1, spies: 0 } });
-  expect(scoreRound({ outUid: 'b', spyUid: 'c', score: { heroes: 1, spies: 0 }, final: false }))
-    .toEqual({ wasSpy: false, team: 'spies', points: 1, score: { heroes: 1, spies: 1 } });
-  expect(scoreRound({ outUid: 'c', spyUid: 'c', score: { heroes: 1, spies: 4 }, final: true }).score)
-    .toEqual({ heroes: 5, spies: 4 });
-  expect(scoreRound({ outUid: 'a', spyUid: 'c', score: { heroes: 1, spies: 4 }, final: true }).score)
-    .toEqual({ heroes: 1, spies: 8 });
-});
 test('stage', () => {
   expect([5, 4, 3, 2].map(stage)).toEqual(['round', 'round', 'final', 'over']);
-});
-test('gameWinner', () => {
-  expect(gameWinner({ heroes: 5, spies: 4 })).toBe('heroes');
-  expect(gameWinner({ heroes: 1, spies: 8 })).toBe('spies');
-  expect(gameWinner({ heroes: 2, spies: 2 })).toBe('draw');
-});
-test('teams', () => {
-  expect(teams({ active: ['a', 'c'], heroBench: ['b'], spyBench: ['d'], spyUid: 'c' }))
-    .toEqual({ heroes: ['a', 'b'], spies: ['c', 'd'] });
-  expect(teams({ active: ['a', 'c'], heroBench: [], spyBench: ['d'], spyUid: null }))
-    .toEqual({ heroes: ['a', 'c'], spies: ['d'] });
 });
 
 const F = [['Cola', 'Water', 'Juice', 'Milk'], ['Dog', 'Cat', 'Rabbit', 'Hamster']];
