@@ -225,4 +225,71 @@ describe('room data layer', () => {
     expect(ids).toContain(u.gm.uid);
     expect(ids).not.toContain(u.p1.uid);
   });
+
+  it('game master joinRoom changes nothing and is not dealt in', async () => {
+    const code = await lobby(4);
+    await joinRoom(u.gm.db, code, u.gm.uid, 'Gina');
+    const s = await state('gm', code, (x) => x.players?.length === 4);
+    expect(s.players.map((p) => p.uid)).not.toContain(u.gm.uid);
+    const dealt = await deal(code);
+    expect(dealt.room.roundPlayers).not.toContain(u.gm.uid);
+  });
+
+  it('joinRoom refuses a taken name (any case) and the game master name', async () => {
+    const code = await lobby(2);
+    await expect(joinRoom(u.p3.db, code, u.p3.uid, 'player1')).rejects.toThrow('Name already taken');
+    await expect(joinRoom(u.p3.db, code, u.p3.uid, ' GINA ')).rejects.toThrow('Name already taken');
+    await joinRoom(u.p1.db, code, u.p1.uid, 'PLAYER1');
+  });
+
+  it('removePlayer of a late joiner does not cancel the round', async () => {
+    const code = await lobby(4);
+    await deal(code);
+    await joinRoom(u.p5.db, code, u.p5.uid, 'Late');
+    await removePlayer(u.gm.db, code, u.p5.uid);
+    const s = await state('gm', code, (x) => x.players?.length === 4);
+    expect(s.room.phase).toBe('clues');
+    await removePlayer(u.gm.db, code, u.p4.uid);
+    expect((await state('gm', code, (x) => x.room?.phase === 'cancelled')).room.phase).toBe('cancelled');
+  });
+
+  it('a player sees their own vote, after reload too; a second vote is blocked', async () => {
+    const code = await lobby(4);
+    const secret = await voting(code);
+    const target = [1, 2, 3, 4].map((i) => u[`p${i}`].uid).find((id) => id !== u.p1.uid);
+    expect((await state('p1', code)).myVote).toBeNull();
+    await castVote(u.p1.db, code, u.p1.uid, target);
+    expect((await state('p1', code, (s) => s.myVote)).myVote).toBe(target);
+    await expect(castVote(u.p1.db, code, u.p1.uid, secret.spyUid)).rejects.toThrow();
+  });
+
+  it('the game master counts only the current round votes', async () => {
+    const code = await lobby(4);
+    await voting(code);
+    await castVote(u.p1.db, code, u.p1.uid, u.p2.uid);
+    expect((await state('gm', code, (s) => s.votesCast === 1)).votesCast).toBe(1);
+    await closeVoting(u.gm.db, code);
+    await dealRound(u.gm.db, code, 'sun', 'moon');
+    expect((await state('gm', code, (s) => s.room?.round === 2)).votesCast).toBe(0);
+  });
+
+  it('deals a round to 15 players: all get a word, exactly one differs', async () => {
+    const extra = Array.from({ length: 15 }, (_, i) => `q${i}`);
+    for (const n of extra) {
+      const { auth, db } = initFirebase(config, { emulator: true, name: n });
+      u[n] = { auth, db, uid: await signIn(auth) };
+    }
+    try {
+      const code = await createRoom(u.gm.db, u.gm.uid, 'Gina');
+      for (const n of extra) await joinRoom(u[n].db, code, u[n].uid, n.toUpperCase());
+      await dealRound(u.gm.db, code, 'cat', 'dog');
+      const words = [];
+      for (const n of extra) words.push((await state(n, code, (s) => s.myWord)).myWord);
+      const cat = words.filter((w) => w === 'cat').length;
+      expect(words.every((w) => w === 'cat' || w === 'dog')).toBe(true);
+      expect([1, 14]).toContain(cat);
+    } finally {
+      await Promise.all(extra.map((n) => deleteApp(u[n].auth.app)));
+    }
+  });
 });

@@ -138,10 +138,10 @@ describe('settle', () => {
     const handed = st('gm', { gmUid: 'a' }, {}, s1.ui);
     expect(settle(s1, handed)).toMatchObject({ view: null, pair: null });
   });
-  it('resets voted and confirmRemove when the round changes', () => {
-    const a = st('a', { round: 1 }, {}, { voted: true, confirmRemove: 'b' });
+  it('resets confirmRemove when the round changes', () => {
+    const a = st('a', { round: 1 }, {}, { confirmRemove: 'b' });
     const b = st('a', { round: 2 }, {}, a.ui);
-    expect(settle(a, b)).toMatchObject({ voted: false, confirmRemove: null });
+    expect(settle(a, b)).toMatchObject({ confirmRemove: null });
   });
 });
 
@@ -165,7 +165,19 @@ describe('render ignores taps right after the screen changes', () => {
   });
 });
 
+describe('vote screen', () => {
+  const vs = (extra, ui = {}) => view(st('a', { ...round, phase: 'voting', starterUid: 'c' }, extra, ui));
+  it('shows Vote sent from the stored vote, not from a local flag', () => {
+    expect(vs({ myVote: 'b' })).toContain('Vote sent');
+    expect(vs({ myVote: null }, { voted: true })).toContain('Who is the spy?');
+  });
+});
+
 describe('remove during a round', () => {
+  it('a late joiner is removed without the round warning', () => {
+    const s = st('gm', { roundPlayers: ['a', 'b', 'c'], phase: 'clues', starterUid: 'a' }, { secret: { common: 'Cola', spy: 'Water', spyUid: 'c', round: 1 } }, { confirmRemove: 'd' });
+    expect(view(s)).not.toContain('This ends the round');
+  });
   it('keeps the Remove section open while asking to confirm', () => {
     const s = st('gm', { ...round, phase: 'clues', starterUid: 'a' }, { secret: { common: 'Cola', spy: 'Water', spyUid: 'c', round: 1 } }, { confirmRemove: 'c' });
     expect(view(s)).toContain('<details class="manage" open>');

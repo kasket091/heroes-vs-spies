@@ -1,6 +1,6 @@
 import {
   doc, collection, query, orderBy, getDoc, getDocs, setDoc, onSnapshot,
-  writeBatch, runTransaction, serverTimestamp,
+  writeBatch, runTransaction, serverTimestamp, where,
 } from 'firebase/firestore';
 import {
   MIN_PLAYERS, safeStarters, speakingOrder, pickSpy, validPair, cleanName, tally, newRoomCode,
@@ -35,7 +35,11 @@ export async function createRoom(db, uid, rawName) {
 export async function joinRoom(db, code, uid, rawName) {
   const name = cleanName(rawName);
   if (!name) throw new Error('Name needed');
-  await getRoom(db, code);
+  const room = await getRoom(db, code);
+  // The game master already has their own screen; a player doc would put them in the deal.
+  if (room.gmUid === uid) return;
+  const taken = (await getDocs(playersQuery(db, code))).docs.some((d) => d.id !== uid && d.data().name.toLowerCase() === name.toLowerCase());
+  if (taken || room.gmName.toLowerCase() === name.toLowerCase()) throw new Error('Name already taken');
   const ref = sub(db, code, 'players', uid);
   await runTransaction(db, async (tx) => {
     // Rejoining keeps the original joinedAt (and so the seat).
@@ -45,7 +49,7 @@ export async function joinRoom(db, code, uid, rawName) {
 }
 
 export function subscribe(db, code, uid, onState) {
-  const s = { room: undefined, players: undefined, priv: null, secret: null, votes: [] };
+  const s = { room: undefined, players: undefined, priv: null, secret: null, votes: [], myVote: null };
   let gmOffs = [];
   let gmMode = false;
   const emit = () => {
@@ -56,10 +60,27 @@ export function subscribe(db, code, uid, onState) {
       players: s.players,
       myWord: dealtIn && s.priv && s.priv.round === s.room.round ? s.priv.word : null,
       secret: gmMode && s.secret && s.secret.round === s.room.round ? s.secret : null,
-      votesCast: gmMode && s.room ? s.votes.filter((v) => v.round === s.room.round).length : 0,
+      myVote: s.myVote,
+      votesCast: gmMode ? s.votes.length : 0,
     });
   };
-  const stopGm = () => { gmOffs.forEach((f) => f()); gmOffs = []; s.secret = null; s.votes = []; };
+  const stopGm = () => { gmOffs.forEach((f) => f()); gmOffs = []; s.secret = null; };
+  // One listener per round: the game master's current-round votes, or a player's own vote doc.
+  let voteOff = () => {};
+  let voteKey = null;
+  const watchVotes = (room, isGm) => {
+    const key = room ? `${isGm}:${room.round}` : null;
+    if (key === voteKey) return;
+    voteOff(); voteOff = () => {}; voteKey = key; s.votes = []; s.myVote = null;
+    if (!room || room.round < 1) return;
+    // Errors are ignored: a listener can race a hand-over and lose read access.
+    if (isGm) {
+      const q = query(collection(db, 'rooms', code, 'votes'), where('round', '==', room.round));
+      voteOff = onSnapshot(q, (d) => { s.votes = d.docs.map((x) => x.data()); emit(); }, () => {});
+    } else {
+      voteOff = onSnapshot(sub(db, code, 'votes', `${room.round}_${uid}`), (d) => { s.myVote = d.exists() ? d.data().target : null; emit(); }, () => {});
+    }
+  };
 
   const offs = [
     onSnapshot(roomRef(db, code), (snap) => {
@@ -69,19 +90,21 @@ export function subscribe(db, code, uid, onState) {
         // Errors are ignored: a listener can race a hand-over and lose read access.
         gmOffs = [
           onSnapshot(sub(db, code, 'gm', 'secret'), (d) => { s.secret = d.exists() ? d.data() : null; emit(); }, () => {}),
-          onSnapshot(collection(db, 'rooms', code, 'votes'), (q) => { s.votes = q.docs.map((d) => d.data()); emit(); }, () => {}),
         ];
       } else if (!isGm && gmMode) stopGm();
       gmMode = isGm;
+      watchVotes(s.room, isGm);
       emit();
     }),
-    onSnapshot(playersQuery(db, code), (q) => {
+    onSnapshot(playersQuery(db, code), { includeMetadataChanges: true }, (q) => {
+      // joinRoom's name check cached an older list: wait for the server's.
+      if (q.metadata.fromCache) return;
       s.players = q.docs.map((d) => ({ uid: d.id, name: d.data().name }));
       emit();
     }),
     onSnapshot(sub(db, code, 'private', uid), (d) => { s.priv = d.exists() ? d.data() : null; emit(); }),
   ];
-  return () => { offs.forEach((f) => f()); stopGm(); };
+  return () => { offs.forEach((f) => f()); stopGm(); voteOff(); };
 }
 
 export async function dealRound(db, code, common, spy) {
@@ -150,7 +173,8 @@ export async function closeVoting(db, code) {
 export async function removePlayer(db, code, uid) {
   const room = await getRoom(db, code);
   const batch = writeBatch(db);
-  if (room.phase === 'clues' || room.phase === 'voting') {
+  // A late joiner is not in the round, so removing them leaves it running.
+  if ((room.phase === 'clues' || room.phase === 'voting') && room.roundPlayers.includes(uid)) {
     const { common, spy, spyUid } = (await getDoc(sub(db, code, 'gm', 'secret'))).data();
     // Read before the delete below: the removed player may be the spy.
     const spyName = (await getDoc(sub(db, code, 'players', spyUid))).data()?.name ?? null;

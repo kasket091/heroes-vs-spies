@@ -6,16 +6,24 @@ service cloud.firestore {
     function isGm(code) { return signedIn() && roomDoc(code).gmUid == request.auth.uid; }
 
     match /rooms/{code} {
-      allow read: if signedIn();
+      allow get: if signedIn();
       allow create: if signedIn() && request.resource.data.gmUid == request.auth.uid;
       allow update: if isGm(code);
 
       match /players/{uid} {
         allow read: if signedIn();
-        allow create, update: if signedIn() && request.auth.uid == uid
-          && request.resource.data.name is string
-          && request.resource.data.name.size() >= 1
-          && request.resource.data.name.size() <= 20;
+        function validName() {
+          return request.resource.data.keys().hasOnly(['name', 'joinedAt'])
+            && request.resource.data.name is string
+            && request.resource.data.name.size() >= 1
+            && request.resource.data.name.size() <= 20;
+        }
+        // getAfter: a hand-over creates the old game master's player doc in the batch that changes gmUid.
+        allow create: if signedIn() && request.auth.uid == uid && validName()
+          && request.resource.data.joinedAt == request.time
+          && getAfter(/databases/$(database)/documents/rooms/$(code)).data.gmUid != uid;
+        allow update: if signedIn() && request.auth.uid == uid && validName()
+          && request.resource.data.joinedAt == resource.data.joinedAt;
         allow delete: if signedIn() && (request.auth.uid == uid || isGm(code));
       }
 
@@ -30,12 +38,15 @@ service cloud.firestore {
 
       match /votes/{id} {
         allow read: if isGm(code);
+        allow get: if signedIn() && id.split('_')[1] == request.auth.uid;
         allow create: if signedIn()
           && id == string(roomDoc(code).round) + '_' + request.auth.uid
           && roomDoc(code).phase == 'voting'
           && request.auth.uid in roomDoc(code).roundPlayers
           && request.resource.data.target in roomDoc(code).roundPlayers
-          && request.resource.data.target != request.auth.uid;
+          && request.resource.data.target != request.auth.uid
+          && request.resource.data.keys().hasOnly(['target', 'round'])
+          && request.resource.data.round == roomDoc(code).round;
       }
     }
   }

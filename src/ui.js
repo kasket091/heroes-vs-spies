@@ -67,7 +67,7 @@ const keepOpen = '<p class="keep"><b>Keep this screen open.</b> Your phone runs 
 
 // Remove during a round cancels it, so each row asks first.
 function removeDuringRound(data, ui) {
-  const rows = data.players.map((p) => (ui.confirmRemove === p.uid
+  const rows = data.players.map((p) => (ui.confirmRemove === p.uid && data.room.roundPlayers.includes(p.uid)
     ? `<li class="confirm"><span>Remove ${esc(p.name)}? This ends the round.</span>
         <span class="row-actions">${btn('Yes, remove', 'remove', { arg: p.uid, kind: 'danger small', disabled: ui.busy })}${btn('Keep', 'cancelRemove', { kind: 'secondary small' })}</span></li>`
     : `<li><span>${esc(p.name)}</span><span class="row-actions">${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy, extra: ` aria-label="Remove ${esc(p.name)}"` })}</span></li>`)).join('');
@@ -173,7 +173,7 @@ const screens = {
     <h2>Speaking order</h2>
     ${data.room.starterUid ? order(data, (id) => (id === uid ? '<i>(you)</i>' : '')) : '<p>Waiting for the game master to pick who goes first.</p>'}`,
 
-  vote: ({ uid, data, ui }) => (ui.voted
+  vote: ({ uid, data, ui }) => (data.myVote
     ? `<h1>Vote sent</h1><p>Wait for the game master to show the result.</p>`
     : `<h1>Who is the spy?</h1>
       <p>Tap one name. You can only vote once.</p>
@@ -209,7 +209,7 @@ export function settle(prev, next) {
   if (screenFor(prev) !== screenFor(next)) ui.error = null;
   const gm = (x) => !!x.data?.room && x.data.room.gmUid === x.uid;
   if (gm(prev) !== gm(next)) Object.assign(ui, { view: null, pair: null });
-  if (prev.data?.room?.round !== next.data?.room?.round) Object.assign(ui, { voted: false, confirmRemove: null });
+  if (prev.data?.room?.round !== next.data?.room?.round) ui.confirmRemove = null;
   return ui;
 }
 

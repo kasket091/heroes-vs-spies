@@ -16,20 +16,33 @@ const { auth, db } = initFirebase(firebaseConfig, {
   name: (onLocalhost && params.get('dev')) || undefined,
 });
 
+const ROOM_KEY = 'spy-room';
+const remembered = (set) => {
+  try {
+    if (set === undefined) return localStorage.getItem(ROOM_KEY) || '';
+    if (set) localStorage.setItem(ROOM_KEY, set); else localStorage.removeItem(ROOM_KEY);
+  } catch { /* no storage: the link still works */ }
+  return '';
+};
 const urlCode = (params.get('room') || '').trim().toUpperCase();
+// The bare link goes straight back to the room this browser last used.
+const rememberedCode = urlCode ? '' : remembered();
+const startCode = urlCode || (isRoomCode(rememberedCode) ? rememberedCode : '');
 const s = {
   uid: null,
-  code: urlCode || null,
-  data: urlCode ? undefined : null,
-  ui: { view: null, pair: null, error: null, confirmRemove: null, busy: false, voted: false,
+  code: startCode || null,
+  data: startCode ? undefined : null,
+  ui: { view: null, pair: null, error: null, confirmRemove: null, busy: false,
     fields: { name: '', code: urlCode, common: '', spy: '' } },
 };
 let unsubscribe = () => {};
 let closingRound = null;
+let checked = false;
 
 const KNOWN = {
   'Room not found': 'Room not found. Check the code with the game master.',
   'Name needed': 'Type your name first.',
+  'Name already taken': 'Someone here already has that name. Pick another one.',
   'Code needed': 'Type the room code.',
   'Not enough players': 'Not enough players. You need at least 4.',
   'Invalid word pair': 'Type two different words.',
@@ -37,13 +50,9 @@ const KNOWN = {
 const ROOM_ERRORS = ['Round already running', 'No round to start', 'Not a safe starter', 'Cannot open voting yet', 'Player not found'];
 const friendly = (e) => KNOWN[e.message] || (ROOM_ERRORS.includes(e.message) ? `${e.message}.` : 'Something went wrong. Check your internet and try again.');
 
-const votedKey = () => `spy-voted:${s.uid}:${s.code}:${s.data?.room?.round}`;
-const readVoted = () => { try { return localStorage.getItem(votedKey()) === '1'; } catch { return false; } };
-
 let last = null;
 const update = () => {
   s.ui = settle(last, s);
-  s.ui.voted = s.ui.voted || (!!s.data?.room && readVoted());
   last = { ...s, ui: { ...s.ui } };
   render(root, s, actions);
 };
@@ -64,15 +73,31 @@ async function run(fn) {
 
 function openRoom(code) {
   s.code = code;
+  remembered(code);
   params.set('room', code);
   history.replaceState(null, '', `?${params}`);
   unsubscribe();
   s.data = undefined;
   unsubscribe = api.subscribe(db, code, s.uid, (data) => {
+    // A remembered room that is gone, or no longer has this person in it: back to the join form.
+    if (startCode === code && !urlCode && !checked) {
+      checked = true;
+      const inRoom = data.room && (data.room.gmUid === s.uid || data.players.some((p) => p.uid === s.uid));
+      if (!inRoom) { remembered(null); leaveRoom(); return; }
+    }
     s.data = data;
     autoClose(data);
     update();
   });
+  update();
+}
+
+function leaveRoom() {
+  unsubscribe();
+  unsubscribe = () => {};
+  params.delete('room');
+  history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}`);
+  Object.assign(s, { code: null, data: null });
   update();
 }
 
@@ -117,11 +142,9 @@ const actions = {
   closeVoting: () => run(() => api.closeVoting(db, s.code)),
   vote: (target) => run(async () => {
     await api.castVote(db, s.code, s.uid, target);
-    s.ui.voted = true;
-    try { localStorage.setItem(votedKey(), '1'); } catch { /* the in-memory flag still holds */ }
   }),
   remove: (uid) => {
-    if (roundRunning() && s.ui.confirmRemove !== uid) { s.ui.confirmRemove = uid; update(); return; }
+    if (roundRunning() && s.data.room.roundPlayers.includes(uid) && s.ui.confirmRemove !== uid) { s.ui.confirmRemove = uid; update(); return; }
     s.ui.confirmRemove = null;
     run(() => api.removePlayer(db, s.code, uid));
   },
