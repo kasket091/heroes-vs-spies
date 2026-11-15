@@ -128,6 +128,8 @@ function endGame(tx, db, code, room, secret) {
     winner: gameWinner(room.score),
     result: {
       ...blankResult,
+      // Keep what the last result already made public.
+      ...Object.fromEntries(['outUid', 'outName', 'spyUid', 'spyName', 'common', 'spy'].map((k) => [k, room.result?.[k] ?? null])),
       ...(known && { spyUid: secret.spyUid, spyName: room.names[secret.spyUid] ?? null, common: secret.common, spy: secret.spy }),
     },
   });
@@ -176,17 +178,21 @@ export async function nextRound(db, code) {
 }
 
 export async function pickStarter(db, code, starterUid) {
-  const room = await getRoom(db, code);
-  const secret = (await getDoc(sub(db, code, 'gm', 'secret'))).data();
-  if (room.phase !== 'clues' || secret?.wordSet !== room.wordSet) throw new Error('No round to start');
-  if (!starterChoices(room.roundPlayers, secret.spyUid).includes(starterUid)) throw new Error('Not a safe starter');
-  await setDoc(roomRef(db, code), { roundPlayers: speakingOrder(room.roundPlayers, starterUid), starterUid }, { merge: true });
+  await runTransaction(db, async (tx) => {
+    const room = await readRoom(tx, db, code);
+    const secret = (await tx.get(sub(db, code, 'gm', 'secret'))).data();
+    if (room.phase !== 'clues' || secret?.wordSet !== room.wordSet) throw new Error('No round to start');
+    if (!starterChoices(room.roundPlayers, secret.spyUid).includes(starterUid)) throw new Error('Not a safe starter');
+    tx.update(roomRef(db, code), { roundPlayers: speakingOrder(room.roundPlayers, starterUid), starterUid });
+  });
 }
 
 export async function openVoting(db, code) {
-  const room = await getRoom(db, code);
-  if (room.phase !== 'clues' || !room.starterUid) throw new Error('Cannot open voting yet');
-  await setDoc(roomRef(db, code), { phase: 'voting' }, { merge: true });
+  await runTransaction(db, async (tx) => {
+    const room = await readRoom(tx, db, code);
+    if (room.phase !== 'clues' || !room.starterUid) throw new Error('Cannot open voting yet');
+    tx.update(roomRef(db, code), { phase: 'voting' });
+  });
 }
 
 export async function castVote(db, code, uid, target) {

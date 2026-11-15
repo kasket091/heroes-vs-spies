@@ -208,7 +208,7 @@ describe('room data layer', () => {
     const { secret, room } = await deal(code);
     await playRound(code, hero(room, secret));
     const first = (await afterClose(code, 1)).room;
-    await closeVoting(u.gm.db, code);
+    await Promise.all([closeVoting(u.gm.db, code), closeVoting(u.gm.db, code)]);
     const second = (await state('gm', code)).room;
     expect(second.result).toEqual(first.result);
     expect(second.score).toEqual({ heroes: 0, spies: 1 });
@@ -396,15 +396,40 @@ describe('room data layer', () => {
     expect(end.winner).toBe('spies');
   });
 
-  it('endGame after the spy left: spy and words stay null', async () => {
+  it('openVoting and pickStarter after the round was voided write nothing', async () => {
+    const code = await lobby(5);
+    const { secret, room } = await deal(code);
+    await pickStarter(u.gm.db, code, firstStarter(room, secret.spyUid));
+    await removePlayer(u.gm.db, code, hero(room, secret));
+    const { room: voided } = await state('gm', code, (s) => s.room?.phase === 'result');
+    await expect(openVoting(u.gm.db, code)).rejects.toThrow('Cannot open voting yet');
+    await expect(pickStarter(u.gm.db, code, voided.active[0])).rejects.toThrow('No round to start');
+    expect((await state('gm', code)).room).toEqual(voided);
+  });
+
+  it('endGame keeps what the last result made public: spy removed in the final, then game over', async () => {
     const code = await lobby(4);
     const { secret, room } = await deal(code);
+    await setDoc(doc(u.gm.db, 'rooms', code), { final: true }, { merge: true });
     await removePlayer(u.gm.db, code, secret.spyUid);
     await removePlayer(u.gm.db, code, hero(room, secret));
     await state('gm', code, (s) => s.room?.active.length === 2);
     await nextRound(u.gm.db, code);
     const { room: end } = await state('gm', code, (s) => s.room?.phase === 'gameOver');
-    expect(end.result).toMatchObject({ spyUid: null, common: null, spy: null });
+    expect(end.result).toMatchObject({ spyUid: secret.spyUid, spyName: `Player${idOf(secret.spyUid).slice(1)}`, common: secret.common, spy: secret.spy });
+  });
+
+  it('endGame after the spy left between rounds: spy and words stay null, the last out player is kept', async () => {
+    const code = await lobby(4);
+    const { secret, room } = await deal(code);
+    const out = hero(room, secret);
+    await playRound(code, out);
+    await afterClose(code, 1);
+    await removePlayer(u.gm.db, code, secret.spyUid);
+    await state('gm', code, (s) => s.room?.active.length === 2);
+    await nextRound(u.gm.db, code);
+    const { room: end } = await state('gm', code, (s) => s.room?.phase === 'gameOver');
+    expect(end.result).toMatchObject({ outUid: out, spyUid: null, common: null, spy: null });
   });
 
   it('late joiner mid-game: in players, not in active, myWord null; dealt in by the next new game', async () => {
