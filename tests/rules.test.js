@@ -78,12 +78,27 @@ describe('security rules', () => {
     await assertFails(db('p5').doc('rooms/ABCD/players/gm').set({ name: 'Gina', joinedAt: now(), expiresAt: ahead(7) }));
     await assertSucceeds(db('gm').doc('rooms/ABCD/players/gm').set({ name: 'Gina', joinedAt: now(), expiresAt: ahead(7) }));
   });
-  it('a player sets their own votedRound to an integer; a string FAILS; on someone else\'s record FAILS', async () => {
-    await assertFails(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: '1' }));
+  // castVote's batch: the vote and the mark together.
+  const voteAndMark = (who, target, mark = 1) => {
+    const d = db(who);
+    const b = d.batch();
+    b.set(d.doc(`rooms/ABCD/votes/1_${who}`), { target, round: 1, expiresAt: ahead(7) });
+    b.update(d.doc(`rooms/ABCD/players/${who}`), { votedRound: mark });
+    return b.commit();
+  };
+  it('votedRound: marking with the vote in the same batch succeeds; marking without a vote FAILS', async () => {
+    await assertFails(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: 1 }));
+    await assertSucceeds(voteAndMark('p1', 'p2'));
+  });
+  it('votedRound: a mark for another round than the vote FAILS; a string FAILS; on someone else\'s record FAILS', async () => {
+    await assertFails(voteAndMark('p1', 'p2', 2));
+    await assertFails(voteAndMark('p1', 'p2', '1'));
     await assertFails(db('p1').doc('rooms/ABCD/players/p2').update({ votedRound: 1 }));
     await assertFails(db('gm').doc('rooms/ABCD/players/p2').update({ votedRound: 1 }));
-    await assertSucceeds(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: 1 }));
-    await assertSucceeds(db('p1').doc('rooms/ABCD/players/p1').update({ votedRound: 2 }));
+  });
+  it('votedRound: an unrelated rename with an existing mark succeeds', async () => {
+    await assertSucceeds(voteAndMark('p1', 'p2'));
+    await assertSucceeds(db('p1').doc('rooms/ABCD/players/p1').update({ name: 'Pat' }));
   });
   it('a player record under a code with no room FAILS; under an existing room succeeds', async () => {
     await assertFails(db('p5').doc('rooms/NOPE/players/p5').set({ name: 'Eve', joinedAt: now(), expiresAt: ahead(7) }));
@@ -96,10 +111,10 @@ describe('security rules', () => {
     b.set(d.doc('rooms/NEWR/players/gm2'), { name: 'Gina', joinedAt: now(), expiresAt: ahead(7) });
     await assertSucceeds(b.commit());
   });
-  it('player create may carry votedRound as an integer only', async () => {
+  it('player create with votedRound FAILS; without it succeeds', async () => {
+    await assertFails(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), votedRound: 1 }));
     await assertFails(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), votedRound: 'x' }));
-    await assertFails(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), votedRound: 1.5 }));
-    await assertSucceeds(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now(), votedRound: 1 }));
+    await assertSucceeds(db('p5').doc('rooms/ABCD/players/p5').set({ name: 'Eve', joinedAt: now() }));
   });
   it('the host reads gm/used; a player reading it FAILS', async () => {
     await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD/gm/used').set({ keys: ['0:0-1'], expiresAt: ahead(7) }));

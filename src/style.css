@@ -252,6 +252,7 @@ input:focus-visible { outline-offset: 1px; border-color: var(--cobalt); }
 .confirm > span:first-child { font-weight: 700; }
 /* Leaving mid-game asks first, in place of the Leave link */
 .ask { margin-top: 1.5rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); }
+.close-vote { margin-top: 0.5rem; }
 /* Another phone is holding the game up: written on the second layer, never coloured alone */
 .stall {
   margin: 0.75rem 0 1rem;

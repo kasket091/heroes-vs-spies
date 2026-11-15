@@ -465,6 +465,51 @@ describe('one Leave control per screen, open sections kept', () => {
   });
 });
 
+describe('final review fixes', () => {
+  it('a seated player who left (no record, still in seats) still has a Remove row with their name', () => {
+    const s = st('gm', game(), { players: players.filter((p) => p.uid !== 'b') });
+    const html = view(s);
+    expect(html).toContain('aria-label="Remove Ben"');
+    expect(html).toContain('data-action="remove" data-arg="b"');
+    expect(html).not.toContain('data-action="remove" data-arg="gm"');
+    expect(html.match(/data-action="remove" data-arg="c"/g)).toHaveLength(1);
+  });
+  it('who the round waits for shows during voting before voting, on the bench and for a late joiner', () => {
+    const extra = { waiting: ['gm', 'b'] };
+    for (const s of [st('a', game(), { ...extra, myWord: 'Cola' }), st('gm', game(), { ...extra, myWord: 'Cola' }), st('e', game(), extra), st('d', game(), extra)]) {
+      expect(view(s)).toContain('Waiting for: Ben, Gina');
+    }
+    const unvoted = view(st('a', game(), { ...extra, myWord: 'Cola' }));
+    expect(unvoted.indexOf('Waiting for: Ben, Gina')).toBeLessThan(unvoted.indexOf('<ol'));
+    for (const s of [st('e', game()), st('d', game()), st('a', game(), { myWord: 'Cola' })]) expect(view(s)).toContain('Everyone has voted.');
+  });
+  it('the waiting line is the same for the spy and a hero', () => {
+    const r = game();
+    const spy = view(st('c', r, { myWord: 'Water', waiting: ['b', 'c'] })).replace('Water', 'W').replace(' <i>(you)</i>', '');
+    const heroHtml = view(st('c', r, { myWord: 'Cola', waiting: ['b', 'c'] })).replace('Cola', 'W').replace(' <i>(you)</i>', '');
+    expect(spy).toBe(heroHtml);
+  });
+  it('the host can close the vote now during voting (seated or benched), asked first; nowhere else', () => {
+    const benched = game({ seats: ['a', 'b', 'c'], roundPlayers: ['a', 'b', 'c'], heroBench: ['e', 'gm'] });
+    for (const s of [st('gm', game()), st('gm', benched)]) {
+      const html = view(s);
+      expect(html).toContain('>Close the vote now<');
+      expect(html).toContain('Counts the votes cast so far.');
+      const asked = view({ ...s, ui: { ...s.ui, confirmClose: true } });
+      expect(asked).toContain('data-open="openRemove" open');
+      expect(has(asked, 'closeVote')).toBe(true);
+      expect(has(asked, 'cancelClose')).toBe(true);
+      expect(asked).toContain('Close the vote now? Counts the votes cast so far.');
+    }
+    for (const s of [st('gm', inResult()), st('gm', {}), st('gm', game({ phase: 'gameOver', winner: 'draw', result: notSpy })),
+      st('a', game()), st('e', game()), st('d', game())]) expect(has(view(s), 'closeVote')).toBe(false);
+  });
+  it('settle drops the close question when the round changes', () => {
+    const a = st('gm', game({ round: 1 }), {}, { confirmClose: true });
+    expect(settle(a, st('gm', game({ round: 2 }), {}, a.ui))).toMatchObject({ confirmClose: false });
+  });
+});
+
 describe('friendly errors', () => {
   it('maps the room errors to plain messages', () => {
     expect(friendly(new Error('Old room'))).toBe('This room is from an older version. Create a new one.');

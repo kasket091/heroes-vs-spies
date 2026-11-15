@@ -676,7 +676,7 @@ describe('room data layer', () => {
     expect(s.players.map((p) => p.uid)).not.toContain(u.p2.uid);
   });
 
-  it('stall: a player leaves mid-game: record gone, still in seats, waiting names them, removing them works', async () => {
+  it('stall: a player leaves mid-game: record gone, still in seats, waiting names them, removing them voids the round and the game goes on', async () => {
     const code = await lobby(5);
     const { room } = await deal(code, LAST_SPY);
     await leaveRoom(u.p2.db, code, u.p2.uid);
@@ -686,8 +686,23 @@ describe('room data layer', () => {
     expect(s.waiting).toEqual([u.p2.uid]);
     await removePlayer(u.h.db, code, u.p2.uid);
     const { room: after } = await state('h', code, (x) => x.room?.phase === 'result');
-    expect(after.result).toMatchObject({ voided: true, outUid: u.p2.uid });
+    expect(after.result).toMatchObject({ voided: true, outUid: u.p2.uid, outName: 'Player2' });
     expect(after.seats).not.toContain(u.p2.uid);
+    await advance(u.h.db, code, FAM);
+    const next = await rawRoom(code, 'h');
+    expect(next).toMatchObject({ phase: 'voting', round: 2 });
+    expect(next.roundPlayers).toHaveLength(4);
+    expect(next.roundPlayers).not.toContain(u.p2.uid);
+  });
+
+  it('castVote that loses a race with the close (the round moved on) returns quietly', async () => {
+    const code = await lobby(4);
+    const { room, secret } = await deal(code, LAST_SPY);
+    const out = hero(room, secret);
+    const late = room.roundPlayers.find((x) => x !== out && x !== u.h.uid);
+    await castAll(code, out, room.roundPlayers.filter((x) => x !== late));
+    await closeVoting(u.h.db, code);
+    await expect(castVote(u[idOf(late)].db, code, late, out)).resolves.toBeUndefined();
   });
 
   it('leaveRoom refuses the host; deleteRoom is their way out; a player may still leave', async () => {
@@ -959,6 +974,22 @@ describe('runRoom: the room runs itself from the host phone', { timeout: 30000 }
       await sleep(600);
       expect((await rawRoom(old, 'h')).phase).toBe('voting');
     } finally { stop2(); }
+  });
+
+  it('a step that fails after runRoom was stopped sets no retry timer', async () => {
+    const code = await lobby(5);
+    const { secret } = await deal(code, LAST_SPY);
+    await castAll(code, secret.spyUid);
+    await closeVoting(u.h.db, code);
+    await afterClose(code, 1);
+    const clock = fakeClock();
+    clock.jump(10000);
+    let errors = 0;
+    // No word families: dealing after the caught spy fails; the page stops the runner as the error arrives.
+    const stop = runRoom(u.h.db, code, u.h.uid, [], { ...clock, onError: () => { errors += 1; stop(); } });
+    await until(() => errors);
+    await sleep(300);
+    expect(clock.calls).toBe(0);
   });
 
   it('stopping runRoom stops it', async () => {

@@ -34,12 +34,17 @@ service cloud.firestore {
             && request.resource.data.name.size() >= 1
             && request.resource.data.name.size() <= 20;
         }
+        // A new record has voted in nothing yet.
         allow create: if signedIn() && request.auth.uid == uid && validName() && optionalExpiry(request.resource.data)
+          && !('votedRound' in request.resource.data)
           && request.resource.data.joinedAt == request.time
           // existsAfter: createRoom writes the room and the host's record in one commit.
           && existsAfter(/databases/$(database)/documents/rooms/$(code));
         allow update: if signedIn() && request.auth.uid == uid && validName()
           && request.resource.data.joinedAt == resource.data.joinedAt
+          // The voted mark stays as it is, or moves only together with this player's vote for that round (castVote's batch).
+          && (request.resource.data.get('votedRound', null) == resource.data.get('votedRound', null)
+            || existsAfter(/databases/$(database)/documents/rooms/$(code)/votes/$(string(request.resource.data.votedRound) + '_' + uid)))
           // Unchanged (a rename; get() so a doc written before expiry existed may have none), or a new valid expiry.
           && (request.resource.data.get('expiresAt', null) == resource.data.get('expiresAt', null)
             || ('expiresAt' in request.resource.data && validExpiry(request.resource.data.expiresAt)));

@@ -258,7 +258,7 @@ export async function castVote(db, code, uid, target) {
     // Refused while the vote is still open for this round: the expiry bound (a phone more than 6 days slow).
     const now = await getRoom(db, code);
     if (now.phase === 'voting' && now.round === round) throw new Error('Bad clock');
-    throw e;
+    // The round was closed or voided while this vote was on its way: nothing to report.
   }
 }
 
@@ -370,7 +370,7 @@ export function runRoom(db, code, uid, families, { now = Date.now, setTimer = se
   let timer = null;
   let stopped = false;
   let failing = null;
-  const arm = (ms) => { if (!timer) timer = setTimer(() => { timer = null; check(); }, ms); };
+  const arm = (ms) => { if (!timer && !stopped) timer = setTimer(() => { timer = null; check(); }, ms); };
   async function check() {
     if (stopped || busy || !last || !last.room) return;
     const seen = last;

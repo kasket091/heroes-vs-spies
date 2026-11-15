@@ -65,11 +65,15 @@ export const isRoomCode = (code) => new RegExp(`^[${CODE_LETTERS}]{4}$`).test(co
 export const pairKeys = (families) =>
   families.flatMap((words, f) => words.flatMap((_, i) => words.slice(i + 1).map((__, k) => `${f}:${i}-${i + 1 + k}`)));
 
-// Random unused pair; once every pair is used the list starts over.
+// Random unused pair from the families used least so far, so a family returns only after every family has
+// come up (people who remember its earlier reveal could rule that pair out). Once every pair is used the list starts over.
 export function pickUnusedPair(families, usedKeys, rand = Math.random) {
   const used = new Set(usedKeys);
   const unused = pairKeys(families).filter((k) => !used.has(k));
-  const key = pick(unused.length ? unused : pairKeys(families), rand);
+  const count = {};
+  for (const k of used) { const f = k.split(':')[0]; count[f] = (count[f] ?? 0) + 1; }
+  const fewest = Math.min(...unused.map((k) => count[k.split(':')[0]] ?? 0));
+  const key = pick(unused.length ? unused.filter((k) => (count[k.split(':')[0]] ?? 0) === fewest) : pairKeys(families), rand);
   const [f, i, j] = key.split(/[:-]/).map(Number);
   return { key, pair: [families[f][i], families[f][j]], usedKeys: unused.length ? [...usedKeys, key] : [key] };
 }

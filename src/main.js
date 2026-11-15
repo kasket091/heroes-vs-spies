@@ -32,7 +32,7 @@ const s = {
   uid: null,
   code: startCode || null,
   data: startCode ? undefined : null,
-  ui: { error: null, runError: null, confirmRemove: null, confirmLeave: false, busy: false,
+  ui: { error: null, runError: null, confirmRemove: null, confirmLeave: false, confirmClose: false, busy: false,
     fields: { name: '', code: urlCode } },
   // When this phone first saw the current state, and this phone's clock: stalled() never reads another phone's time.
   since: null,
@@ -151,6 +151,13 @@ const actions = {
     run(() => api.removePlayer(db, s.code, uid));
   },
   cancelRemove: () => { s.ui.confirmRemove = null; update(); },
+  // Host only, during voting: counts the votes cast so far, for this round only (a later round is left alone).
+  closeVote: () => {
+    if (!s.ui.confirmClose) { s.ui.confirmClose = true; update(); return; }
+    s.ui.confirmClose = false;
+    run(() => api.closeVoting(db, s.code, undefined, s.data.room.round));
+  },
+  cancelClose: () => { s.ui.confirmClose = false; update(); },
   askLeave: () => { s.ui.confirmLeave = true; update(); },
   stay: () => { s.ui.confirmLeave = false; update(); },
   leave: () => run(async () => {

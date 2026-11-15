@@ -139,12 +139,20 @@ function gameOver(data) {
 
 // Removing a seated player mid-vote voids the round, so those rows ask first. The host cannot remove themselves.
 function removeList({ uid, data, ui }) {
-  const asks = (id) => data.room.phase === 'voting' && data.room.seats.includes(id);
-  const rows = data.players.filter((p) => p.uid !== uid).map((p) => (ui.confirmRemove === p.uid && asks(p.uid)
+  const { room } = data;
+  const asks = (id) => room.phase === 'voting' && room.seats.includes(id);
+  // Seats too: a seated player who left has no record any more but still holds up the round.
+  const ids = [...new Set([...data.players.map((p) => p.uid), ...room.seats])].filter((id) => id !== uid);
+  const rows = ids.map((id) => ({ uid: id, name: nameOf(data, id) })).map((p) => (ui.confirmRemove === p.uid && asks(p.uid)
     ? `<li class="confirm"><span>Remove ${esc(p.name)}? This round won't count.</span>
         <span class="row-actions">${btn('Yes, remove', 'remove', { arg: p.uid, kind: 'danger small', disabled: ui.busy })}${btn('Keep', 'cancelRemove', { kind: 'secondary small' })}</span></li>`
     : `<li><span>${esc(p.name)}</span><span class="row-actions">${btn('Remove', 'remove', { arg: p.uid, kind: 'secondary small', disabled: ui.busy, extra: ` aria-label="Remove ${esc(p.name)}"` })}</span></li>`)).join('');
-  return `<details class="manage" data-open="openRemove"${ui.confirmRemove || ui.openRemove ? ' open' : ''}><summary>Remove a player</summary><ol class="ruled">${rows}</ol></details>`;
+  // For a player who just will not vote: removing them would cancel the round.
+  const close = room.phase !== 'voting' ? '' : ui.confirmClose
+    ? `<div class="close-vote"><p><b>Close the vote now? Counts the votes cast so far.</b></p>
+      <div class="row-actions">${btn('Yes, close', 'closeVote', { kind: 'primary small', disabled: ui.busy })}${btn('Keep', 'cancelClose', { kind: 'secondary small' })}</div></div>`
+    : `<div class="close-vote">${btn('Close the vote now', 'closeVote', { kind: 'secondary', disabled: ui.busy })}<p class="hint">Counts the votes cast so far.</p></div>`;
+  return `<details class="manage" data-open="openRemove"${ui.confirmRemove || ui.confirmClose || ui.openRemove ? ' open' : ''}><summary>Remove a player</summary><ol class="ruled">${rows}</ol>${close}</details>`;
 }
 
 const keepOpen = '<p class="keep">Your phone runs this room. Keep this screen open.</p>';
@@ -153,15 +161,17 @@ const playerList = ({ uid, data }) => `<h2>Players (${data.players.length})</h2>
     <ol class="ruled numbered">${data.players.map((p) => `<li><span>${esc(p.name)}${you(p.uid === uid)}</span></li>`).join('')}</ol>`;
 
 // What this phone knows about its own vote; shown above the order so it is seen without scrolling.
+// Who the round is waiting for: public, the same on every phone. Shown in speaking order, whatever order the list arrived in.
+function waitText(data) {
+  const left = data.room.roundPlayers.filter((id) => data.waiting?.includes(id));
+  return left.length ? `Waiting for: ${left.map((id) => esc(nameOf(data, id))).join(', ')}` : 'Everyone has voted.';
+}
+const waitLine = (s, prefix = '') => `<p class="sent" role="status">${prefix}${waitText(s.data)}</p>${stallLine(s)}`;
+
 function voteStatus(s) {
-  const { data } = s;
-  const { room, myVote } = data;
+  const { myVote } = s.data;
   if (myVote === undefined) return '<p class="status" role="status">Checking your vote…</p>';
-  if (!myVote) return '';
-  // Shown in speaking order, whatever order the list arrived in.
-  const left = room.roundPlayers.filter((id) => data.waiting?.includes(id));
-  return `<p class="sent" role="status"><b>Vote sent.</b> ${left.length ? `Waiting for: ${left.map((id) => esc(nameOf(data, id))).join(', ')}` : 'Everyone has voted.'}</p>
-    ${stallLine(s)}`;
+  return waitLine(s, myVote ? '<b>Vote sent.</b> ' : '');
 }
 
 function nextLine(room) {
@@ -235,10 +245,10 @@ const screens = {
   // Benched players see no word, ever: only the scoreboard.
   bench: (s) => `<h1>You're on the ${bench(s.data.room, s.uid)} bench</h1>
     <p>You win or lose with your team. Watch the score.</p>
-    ${stallLine(s)}
+    ${waitLine(s)}
     ${scoreboard(s.data)}`,
 
-  lateJoiner: (s) => `<h1>A game is in progress. You're in the next one.</h1>${stallLine(s)}`,
+  lateJoiner: (s) => `<h1>A game is in progress. You're in the next one.</h1>${waitLine(s)}`,
 
   result: (s) => {
     const { uid, data } = s;
@@ -275,7 +285,7 @@ export function settle(prev, next) {
   const ui = { ...next.ui };
   if (!prev) return ui;
   if (screenFor(prev) !== screenFor(next)) ui.error = null;
-  if (prev.data?.room?.round !== next.data?.room?.round) Object.assign(ui, { confirmRemove: null, confirmLeave: false });
+  if (prev.data?.room?.round !== next.data?.room?.round) Object.assign(ui, { confirmRemove: null, confirmLeave: false, confirmClose: false });
   return ui;
 }
 
@@ -286,7 +296,7 @@ export function render(root, s, actions) {
   // Same markup: leave the DOM alone so typing and focus survive unrelated updates.
   if (root.renderedHtml === html) return;
   // A new screen, phase, vote sent, or a question under the finger: drop the second tap of a double tap.
-  const key = `${screenFor(s)}:${s.data?.room?.phase}:${!!s.data?.myVote}:${s.ui.confirmRemove ?? ''}:${!!s.ui.confirmLeave}`;
+  const key = `${screenFor(s)}:${s.data?.room?.phase}:${!!s.data?.myVote}:${s.ui.confirmRemove ?? ''}:${!!s.ui.confirmLeave}:${!!s.ui.confirmClose}`;
   if (root.screenKey !== key) root.tapsFrom = Date.now() + TAP_GUARD_MS;
   root.screenKey = key;
   root.renderedHtml = html;

@@ -107,6 +107,22 @@ test('the real list: 378 deals without a repeat', () => {
   for (let n = 0; n < 378; n += 1) { const r = pickUnusedPair(families, used); seen.add(r.key); used = r.usedKeys; }
   expect(seen.size).toBe(378);
 });
+test('pickUnusedPair spreads deals over families: the first 63 deals use 63 different families', () => {
+  let used = []; const fams = new Set();
+  for (let n = 0; n < families.length; n += 1) { const r = pickUnusedPair(families, used); fams.add(r.key.split(':')[0]); used = r.usedKeys; }
+  expect(fams.size).toBe(families.length);
+});
+test('pickUnusedPair picks from the least-used families only, also with a fixed rand', () => {
+  // Family 0 has one pair used, family 1 none: even rand() = 0 must pick from family 1.
+  expect(pickUnusedPair(F, ['0:0-1'], () => 0).key.startsWith('1:')).toBe(true);
+  expect(pickUnusedPair(F, ['0:0-1', '1:2-3'], () => 0).key).toBe('0:0-2');
+});
+test('the real list: the 379th deal starts over', () => {
+  let used = [];
+  for (let n = 0; n < 378; n += 1) used = pickUnusedPair(families, used).usedKeys;
+  const r = pickUnusedPair(families, used);
+  expect(r.usedKeys).toEqual([r.key]);
+});
 test('pickStarter keeps two speakers ahead of the spy only in a first round of 5 or more', () => {
   const P5 = ['a', 'b', 'c', 'd', 'e'];
   for (const r of [0, 0.3, 0.6, 0.99]) expect(['a', 'd', 'e']).toContain(pickStarter(P5, 'c', true, () => r));
