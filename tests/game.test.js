@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { MIN_PLAYERS, safeStarters, speakingOrder, pickSpy, dealPair, validPair, cleanName, tally, newRoomCode, starterChoices, whoIsOut, finalPoints, scoreRound, stage, gameWinner, teams } from '../src/game.js';
+import { MIN_PLAYERS, safeStarters, speakingOrder, pickSpy, dealPair, validPair, cleanName, newRoomCode, starterChoices, whoIsOut, finalPoints, scoreRound, stage, gameWinner, teams } from '../src/game.js';
 
 const P = ['a', 'b', 'c', 'd', 'e'];
 test('MIN_PLAYERS is 4', () => {
@@ -35,18 +35,6 @@ test('cleanName', () => {
   expect(cleanName('x'.repeat(30))).toHaveLength(20);
   expect(cleanName('x'.repeat(19) + ' yyyy')).toBe('x'.repeat(19));
 });
-test('tally: spy caught', () => {
-  expect(tally({ a: 'c', b: 'c', d: 'a' }, 'c')).toEqual({ votedOutUid: 'c', tie: false, winner: 'players' });
-});
-test('tally: wrong player voted out', () => {
-  expect(tally({ a: 'b', c: 'b', d: 'c' }, 'c')).toEqual({ votedOutUid: 'b', tie: false, winner: 'spy' });
-});
-test('tally: tie means spy wins, even if the spy is tied', () => {
-  expect(tally({ a: 'c', b: 'd' }, 'c')).toEqual({ votedOutUid: null, tie: true, winner: 'spy' });
-});
-test('tally of no votes', () => {
-  expect(tally({}, 'c')).toEqual({ votedOutUid: null, tie: true, winner: 'spy' });
-});
 test('newRoomCode is 4 allowed letters', () => {
   expect(newRoomCode()).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/);
 });
@@ -63,6 +51,10 @@ test('whoIsOut: a tie draws among the tied only', () => {
   const votes = { a: 'c', b: 'd' };
   expect(whoIsOut(votes, ['a', 'b', 'c', 'd'], () => 0)).toBe('c');
   expect(whoIsOut(votes, ['a', 'b', 'c', 'd'], () => 0.99)).toBe('d');
+});
+test('whoIsOut: a vote for "constructor" or a non-active id is ignored', () => {
+  expect(whoIsOut({ a: 'constructor', b: 'constructor', c: 'zz' }, ['a', 'b', 'c'], () => 0)).toBe('a');
+  expect(whoIsOut({ a: 'b', c: '__proto__' }, ['a', 'b', 'c'], () => 0.99)).toBe('b');
 });
 test('whoIsOut: no votes draws among everyone', () => {
   expect(whoIsOut({}, ['a', 'b', 'c'], () => 0)).toBe('a');

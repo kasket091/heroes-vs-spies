@@ -53,6 +53,11 @@ describe('security rules', () => {
   it('p1 creates votes/1_p2 FAILS', () => assertFails(db('p1').doc('rooms/ABCD/votes/1_p2').set({ target: 'p3', round: 1 })));
   it('p1 votes for p1 FAILS', () => assertFails(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'p1', round: 1 })));
   it('p1 votes for stranger FAILS', () => assertFails(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'stranger', round: 1 })));
+  it('a uid not in roundPlayers (benched) cannot create a vote; one in roundPlayers can', async () => {
+    await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD').update({ active: ['p1', 'p2', 'p3'], roundPlayers: ['p1', 'p2', 'p3'] }));
+    await assertFails(db('p4').doc('rooms/ABCD/votes/1_p4').set({ target: 'p1', round: 1 }));
+    await assertSucceeds(db('p1').doc('rooms/ABCD/votes/1_p1').set({ target: 'p2', round: 1 }));
+  });
   it('p5 votes FAILS', () => assertFails(db('p5').doc('rooms/ABCD/votes/1_p5').set({ target: 'p1', round: 1 })));
   it('p1 votes in clues phase FAILS', async () => {
     await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc('rooms/ABCD').update({ phase: 'clues' }));

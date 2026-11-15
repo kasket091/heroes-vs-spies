@@ -32,22 +32,13 @@ export function cleanName(raw) {
   return raw.slice(0, 20).trim() || null;
 }
 
-export function tally(votes, spyId) {
-  const counts = {};
-  for (const target of Object.values(votes)) counts[target] = (counts[target] || 0) + 1;
-  const max = Math.max(0, ...Object.values(counts));
-  const top = Object.keys(counts).filter((k) => counts[k] === max);
-  if (top.length !== 1) return { votedOutUid: null, tie: true, winner: 'spy' };
-  return { votedOutUid: top[0], tie: false, winner: top[0] === spyId ? 'players' : 'spy' };
-}
-
 export const starterChoices = (activeIds, spyId) =>
   activeIds.length >= 5 ? safeStarters(activeIds, spyId) : [...activeIds];
 
 // Most votes goes out; a tie (or no votes) draws among the tied, in activeIds order.
 export function whoIsOut(votes, activeIds, rand = Math.random) {
   const counts = Object.fromEntries(activeIds.map((id) => [id, 0]));
-  for (const target of Object.values(votes)) if (target in counts) counts[target]++;
+  for (const target of Object.values(votes)) if (Object.hasOwn(counts, target)) counts[target]++;
   const max = Math.max(...Object.values(counts));
   return pick(activeIds.filter((id) => counts[id] === max), rand);
 }
