@@ -42,7 +42,11 @@ async function getRoom(db, code) {
   return snap.data();
 }
 
-export async function createRoom(db, uid, rawName, nextCode = newRoomCode) {
+// The first request to the database pays for opening the connection: do that while the person is still typing their name.
+export const warmUp = (db) => getDoc(roomRef(db, '0000')).catch(() => {});
+
+// onCreated(code) is called as soon as the room exists, so the screen can open while the lock is still being written.
+export async function createRoom(db, uid, rawName, nextCode = newRoomCode, onCreated = () => {}) {
   const gmName = cleanName(rawName);
   if (!gmName) throw new Error('Name needed');
   // A refused create is a code whose lock still exists (the rules hide it from us) or a past expiresAt: after a few tries, blame the clock.
@@ -67,6 +71,7 @@ export async function createRoom(db, uid, rawName, nextCode = newRoomCode) {
       continue;
     }
     if (ok) {
+      onCreated(code);
       await asGm(() => setDoc(lockRef(db, code), lockTtl()));
       return code;
     }

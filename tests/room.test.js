@@ -176,6 +176,13 @@ describe('room data layer', () => {
     expect('active' in s.room || 'seats' in s.room || 'ranking' in s.room).toBe(false);
   });
 
+  it('createRoom reports the code as soon as the room exists, before its last write, so the screen can open early', async () => {
+    let early = null;
+    const code = await createRoom(u.h.db, u.h.uid, 'Gina', undefined, (c) => { early = c; });
+    expect(early).toBe(code);
+    expect((await rawRoom(code, 'h')).gmUid).toBe(u.h.uid);
+  });
+
   it('createRoom then joinRoom x3 lists 4 names in join order, host first', async () => {
     const code = await lobby(4);
     const s = await state('p1', code, (x) => x.players?.length === 4);

@@ -132,7 +132,7 @@ const actions = {
   setField: (name, value) => { s.ui.fields[name] = value; },
   // Remembers an open section without re-rendering: the browser already shows it.
   setOpen: (key, open) => { s.ui[key] = open; },
-  create: () => run(async () => openRoom(await api.createRoom(db, s.uid, s.ui.fields.name))),
+  create: () => run(() => api.createRoom(db, s.uid, s.ui.fields.name, undefined, openRoom)),
   join: () => run(async () => {
     const code = s.ui.fields.code.trim().toUpperCase();
     if (!code) throw new Error('Code needed');
@@ -178,7 +178,7 @@ signIn(auth).then((uid) => {
   s.uid = uid;
   // A malformed ?room= shows "Room not found" on the join form without touching Firestore.
   if (s.code && !isRoomCode(s.code)) { s.data = { room: null, players: [] }; update(); } else if (s.code) openRoom(s.code);
-  else update();
+  else { update(); api.warmUp(db); }
 }).catch(() => {
   s.code = null;
   s.ui.error = 'Could not connect. Check your internet, then reload the page.';
